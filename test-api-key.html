@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Supabase API Key</title>
+</head>
+<body>
+    <h1>Test Supabase API Key</h1>
+    <button onclick="testKey()">Test API Key</button>
+    <div id="result"></div>
+
+    <script>
+        async function testKey() {
+            const url = 'https://pfbcpqifhbqpymnagzss.supabase.co/auth/v1/signup';
+            const key = prompt('Enter your Supabase anon key:');
+            
+            if (!key) return;
+            
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': key,
+                        'Authorization': `Bearer ${key}`
+                    },
+                    body: JSON.stringify({
+                        email: 'test@example.com',
+                        password: 'testpassword123'
+                    })
+                });
+                
+                const result = document.getElementById('result');
+                result.innerHTML = `
+                    <h3>Response Status: ${response.status}</h3>
+                    <p>Status Text: ${response.statusText}</p>
+                    <p>Headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2)}</p>
+                `;
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    result.innerHTML += `<p>Success: ${JSON.stringify(data, null, 2)}</p>`;
+                } else {
+                    const error = await response.text();
+                    result.innerHTML += `<p>Error: ${error}</p>`;
+                }
+                
+            } catch (error) {
+                document.getElementById('result').innerHTML = `<p>Exception: ${error.message}</p>`;
+            }
+        }
+    </script>
+</body>
+</html>

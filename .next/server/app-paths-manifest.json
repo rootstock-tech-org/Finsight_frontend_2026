@@ -1,0 +1,10 @@
+{
+  "/api/ocr/history/route": "app/api/ocr/history/route.js",
+  "/api/watchlist/route": "app/api/watchlist/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/page": "app/page.js",
+  "/stocks/page": "app/stocks/page.js",
+  "/dashboard/page": "app/dashboard/page.js",
+  "/profile/page": "app/profile/page.js",
+  "/watchlist/page": "app/watchlist/page.js"
+}

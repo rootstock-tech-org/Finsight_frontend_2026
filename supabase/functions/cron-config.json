@@ -1,0 +1,12 @@
+{
+  "cron": {
+    "fetch-stocks": {
+      "schedule": "*/5 * * * *",
+      "description": "Fetch and update stock prices every 5 minutes during market hours"
+    },
+    "fetch-news": {
+      "schedule": "0 */30 * * *",
+      "description": "Fetch news articles every 30 minutes"
+    }
+  }
+}
