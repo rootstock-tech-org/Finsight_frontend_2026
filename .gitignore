@@ -1,0 +1,45 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Output
+.next/
+.next-static/
+out/
+dist/
+build/
+
+# Testing
+coverage/
+.jest/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Vercel/Netlify
+.vercel/
+.netlify/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Misc
+*.local
+
+# Supabase
+.supabase
