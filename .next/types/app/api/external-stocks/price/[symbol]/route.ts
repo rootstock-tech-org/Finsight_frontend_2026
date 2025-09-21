@@ -1,4 +1,4 @@
-// File: C:\Users\anubh\OneDrive\Desktop\finsightlatest\src\app\api\external-stocks\price\[symbol]\route.ts
+// File: /Users/tushar/new_finsight/FinSight-FrontEnd/src/app/api/external-stocks/price/[symbol]/route.ts
 import * as entry from '../../../../../../../src/app/api/external-stocks/price/[symbol]/route.js'
 import type { NextRequest } from 'next/server.js'
 

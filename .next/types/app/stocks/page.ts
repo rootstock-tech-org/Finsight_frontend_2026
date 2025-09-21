@@ -1,4 +1,4 @@
-// File: C:\Users\anubh\OneDrive\Desktop\finsightlatest\src\app\stocks\page.tsx
+// File: /Users/tushar/new_finsight/FinSight-FrontEnd/src/app/stocks/page.tsx
 import * as entry from '../../../../src/app/stocks/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

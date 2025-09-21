@@ -26,16 +26,6 @@
       "static/chunks/main-app.js",
       "static/chunks/app/api/watchlist/route.js"
     ],
-    "/profile/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/profile/page.js"
-    ],
-    "/watchlist/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/watchlist/page.js"
-    ],
     "/stocks/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
@@ -45,21 +35,6 @@
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/api/external-stocks/price/[symbol]/route.js"
-    ],
-    "/api/external-stocks/search/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/external-stocks/search/route.js"
-    ],
-    "/api/ocr/history/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/ocr/history/route.js"
-    ],
-    "/api/ocr/upload/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/ocr/upload/route.js"
     ]
   }
 }

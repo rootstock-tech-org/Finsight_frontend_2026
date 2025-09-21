@@ -268,6 +268,31 @@ export class IndianStocksService {
       return this.getPopularStocks();
     }
 
+    // 1) Try super-fast local CSV search for name/symbol
+    try {
+      const url = `/api/local-stocks/search?query=${encodeURIComponent(query)}&limit=50`;
+      console.log('🔍 [INDIAN-STOCKS] Trying local CSV search at:', url);
+      const res = await fetch(url);
+      if (res.ok) {
+        const data: { results: { symbol: string; name: string }[] } = await res.json();
+        if (Array.isArray(data.results) && data.results.length > 0) {
+          const csvItems: WatchlistItem[] = data.results.map(item => ({
+            symbol: item.symbol,
+            name: item.name || item.symbol,
+            type: 'stock' as const,
+            sector: 'Unknown',
+            last_price: undefined,
+            change_percent: undefined as unknown as number
+          }));
+          const endTime = performance.now();
+          console.log(`✅ [INDIAN-STOCKS] Local CSV search returned ${csvItems.length} results in ${(endTime - startTime).toFixed(2)}ms`);
+          return csvItems;
+        }
+      }
+    } catch (e) {
+      console.log('⚠️ [INDIAN-STOCKS] Local CSV search failed, falling back to RunPod search');
+    }
+
     console.log('🔍 [INDIAN-STOCKS] Searching stocks using RunPod API...');
     
     try {
