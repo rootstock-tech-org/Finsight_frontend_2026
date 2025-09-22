@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStockStore } from '@/lib/store/stock-store';
 import { useSupabase } from '@/components/providers/SupabaseProvider';
 import { useWatchlist } from '@/hooks/useWatchlist';
@@ -34,17 +34,36 @@ export default function DashboardPage() {
     const [p, setP] = useState<number | undefined>(price);
     const [loading, setLoading] = useState<boolean>(!price || price === 0);
     const [showRetry, setShowRetry] = useState<boolean>(false);
+    const autoFetched = useRef<boolean>(false);
+    const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
     useEffect(() => {
       if (price && price > 0) {
         setP(price);
         setLoading(false);
         setShowRetry(false);
+        try {
+          // Cache the provided price
+          localStorage.setItem(`price_cache_${symbol}`, JSON.stringify({ price, ts: Date.now() }));
+        } catch (_) {}
         return;
       }
+      // Try cached price for instant render
+      try {
+        const raw = localStorage.getItem(`price_cache_${symbol}`);
+        if (raw) {
+          const cached = JSON.parse(raw) as { price: number; ts: number };
+          if (cached && typeof cached.price === 'number' && Date.now() - (cached.ts || 0) <= TTL_MS) {
+            setP(cached.price);
+            setLoading(false);
+            setShowRetry(false);
+            return;
+          }
+        }
+      } catch (_) {}
       setLoading(true);
       const t = setTimeout(() => {
-        setShowRetry(true);
+        setShowRetry(false);
         setLoading(false);
       }, 3500);
       return () => clearTimeout(t);
@@ -54,24 +73,46 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         setShowRetry(false);
-        const res = await fetch(`/api/external-stocks/price/${encodeURIComponent(symbol)}`);
+        const res = await fetch(`/api/stock/${encodeURIComponent(symbol)}/price`);
         const data = await res.json();
         const val = Number(data?.last_price) || 0;
         if (val > 0) {
           setP(val);
+          try {
+            localStorage.setItem(`price_cache_${symbol}`, JSON.stringify({ price: val, ts: Date.now() }));
+          } catch (_) {}
         } else {
-          setShowRetry(true);
+          setShowRetry(false);
         }
       } catch (_) {
-        setShowRetry(true);
+        setShowRetry(false);
       } finally {
         setLoading(false);
       }
     };
 
+    // Auto-attempt one background fetch on mount if no price and no fresh cache
+    useEffect(() => {
+      if (autoFetched.current) return;
+      if (price && price > 0) return;
+      try {
+        const raw = localStorage.getItem(`price_cache_${symbol}`);
+        const cached = raw ? (JSON.parse(raw) as { price: number; ts: number }) : null;
+        const hasFreshCache = cached && typeof cached.price === 'number' && Date.now() - (cached.ts || 0) <= TTL_MS;
+        if (!hasFreshCache) {
+          autoFetched.current = true;
+          // fire and forget; UI already shows spinner/then retry
+          retry();
+        }
+      } catch (_) {
+        autoFetched.current = true;
+        retry();
+      }
+    }, [symbol]);
+
     if (p && p > 0) return <><p className="font-medium text-gray-900 dark:text-white">₹{p.toFixed(2)}</p></>;
     if (loading) return <div className="flex items-center justify-end text-gray-500 dark:text-gray-400"><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></span>Loading...</div>;
-    if (showRetry || !p) return <button onClick={retry} className="text-xs px-2 py-0.5 bg-blue-600 text-white rounded">Retry</button>;
+    if (!p) return <span className="text-xs text-gray-500 dark:text-gray-400">N/A</span>;
     return <></>;
   };
 
@@ -718,7 +759,20 @@ export default function DashboardPage() {
                     <div className="space-y-4">
                       {(() => {
                         const data = selectedAnalysis.analysis_data || {};
-                        const excluded = new Set(['company','document_type','ir_subtype','processing_time','cached','timestamp','document_id']);
+                        const excluded = new Set([
+                          'company',
+                          'document_type',
+                          'ir_subtype',
+                          'processing_time',
+                          'cached',
+                          'timestamp',
+                          'document_id',
+                          // Hide generic categories like "company_news" from UI
+                          'category',
+                          'Category',
+                          'news_category',
+                          'newsCategory'
+                        ]);
                         const entries = Object.entries(data).filter(([k, v]) => v !== null && v !== undefined && v !== '' && !excluded.has(k));
                         const byKey: Record<string, any> = Object.fromEntries(entries);
                         const ordered = knownKeyOrder.filter((k) => k in byKey);

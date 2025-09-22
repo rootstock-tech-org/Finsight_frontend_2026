@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { invitationService, InvitationFormState, TokenValidationResponse } from '@/lib/services/invitation-service';
+import { invitationService, InvitationService, InvitationFormState, TokenValidationResponse } from '@/lib/services/invitation-service';
 
 export interface UseInvitationFormOptions {
   token?: string;
@@ -27,7 +27,7 @@ export function useInvitationForm(options: UseInvitationFormOptions = {}) {
   // Extract token from URL if not provided
   useEffect(() => {
     if (!token && !providedToken) {
-      const extractedToken = invitationService.constructor.extractToken();
+      const extractedToken = InvitationService.extractToken();
       if (extractedToken) {
         setToken(extractedToken);
       }

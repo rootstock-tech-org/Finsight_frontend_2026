@@ -59,6 +59,32 @@ export class WatchlistService {
       });
 
       if (!response.ok) {
+        // If already exists, treat as success by returning the existing item
+        if (response.status === 409) {
+          try {
+            const existingRes = await fetch(`/api/watchlist?user_id=${userId}`);
+            if (existingRes.ok) {
+              const existingJson = await existingRes.json();
+              const existing = (existingJson.watchlist || []).find((w: any) => w.symbol === symbol);
+              if (existing) {
+                return existing as WatchlistApiItem;
+              }
+            }
+          } catch (_) {
+            // ignore and fall through to synthetic
+          }
+          // Fallback synthetic item to keep UI consistent
+          return {
+            id: crypto?.randomUUID?.() || `${userId}-${symbol}`,
+            user_id: userId,
+            symbol,
+            company_name: companyName || symbol,
+            notes: notes || '',
+            added_at: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          } as unknown as WatchlistApiItem;
+        }
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
       }
@@ -67,7 +93,8 @@ export class WatchlistService {
 
       // Fetch price only for the newly added symbol so it can show immediately
       try {
-        const priceRes = await fetch(`/api/external-stocks/price/${encodeURIComponent(symbol)}`);
+        // Use direct stock price endpoint that also persists to DB
+        const priceRes = await fetch(`/api/stock/${encodeURIComponent(symbol)}/price`);
         if (priceRes.ok) {
           const priceData = await priceRes.json();
           return {
@@ -132,7 +159,7 @@ export class WatchlistService {
 
         // Try to fetch current price from external API
         try {
-          const response = await fetch(`/api/external-stocks/price/${item.symbol}`);
+          const response = await fetch(`/api/stock/${encodeURIComponent(item.symbol)}/price`);
           if (response.ok) {
             const priceData = await response.json();
             return {

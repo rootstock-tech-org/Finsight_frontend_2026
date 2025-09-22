@@ -3,13 +3,10 @@ import fs from 'fs';
 import path from 'path';
 
 type CsvRow = {
-  exchange: string;
-  trading_symbol: string;
-  groww_symbol: string;
-  name: string;
-  series: string;
-  isin: string;
-  exchange_token: string;
+  TckrSymb: string; // symbol
+  FinInstrmNm: string; // name
+  Industry: string; // sector/industry
+  exchange: string; // NSE/BSE
 };
 
 // Module-level cache (persists across requests in the same serverless instance)
@@ -22,13 +19,10 @@ function parseCsv(content: string): CsvRow[] {
   const getIdx = (key: string) => header.indexOf(key);
 
   const idx = {
-    exchange: getIdx('exchange'),
-    trading_symbol: getIdx('trading_symbol'),
-    groww_symbol: getIdx('groww_symbol'),
-    name: getIdx('name'),
-    series: getIdx('series'),
-    isin: getIdx('isin'),
-    exchange_token: getIdx('exchange_token')
+    TckrSymb: getIdx('TckrSymb'),
+    FinInstrmNm: getIdx('FinInstrmNm'),
+    Industry: getIdx('Industry'),
+    exchange: getIdx('exchange')
   };
 
   const rows: CsvRow[] = [];
@@ -39,13 +33,10 @@ function parseCsv(content: string): CsvRow[] {
     // Guard against malformed rows
     if (cols.length < header.length) continue;
     rows.push({
-      exchange: cols[idx.exchange] || '',
-      trading_symbol: cols[idx.trading_symbol] || '',
-      groww_symbol: cols[idx.groww_symbol] || '',
-      name: cols[idx.name] || '',
-      series: cols[idx.series] || '',
-      isin: cols[idx.isin] || '',
-      exchange_token: cols[idx.exchange_token] || ''
+      TckrSymb: cols[idx.TckrSymb] || '',
+      FinInstrmNm: cols[idx.FinInstrmNm] || '',
+      Industry: cols[idx.Industry] || '',
+      exchange: cols[idx.exchange] || ''
     });
   }
   return rows;
@@ -53,20 +44,20 @@ function parseCsv(content: string): CsvRow[] {
 
 function ensureLoaded(): CsvRow[] {
   if (CSV_CACHE) return CSV_CACHE.rows;
-  const csvPath = path.join(process.cwd(), 'groww_all_stocks.csv');
+  const csvPath = path.join(process.cwd(), 'nse_bse_filtered.csv');
   const content = fs.readFileSync(csvPath, 'utf8');
   const rows = parseCsv(content);
-  // Deduplicate by trading_symbol; prefer NSE and series EQ
+  // Deduplicate by symbol; prefer NSE over others
   const bestBySymbol = new Map<string, CsvRow>();
   for (const row of rows) {
-    const key = row.trading_symbol?.trim();
+    const key = row.TckrSymb?.trim();
     if (!key) continue;
     const existing = bestBySymbol.get(key);
     if (!existing) {
       bestBySymbol.set(key, row);
       continue;
     }
-    const score = (r: CsvRow) => (r.exchange === 'NSE' ? 2 : 0) + (r.series === 'EQ' ? 1 : 0);
+    const score = (r: CsvRow) => (r.exchange === 'NSE' ? 1 : 0);
     if (score(row) > score(existing)) bestBySymbol.set(key, row);
   }
   const deduped = Array.from(bestBySymbol.values());
@@ -89,8 +80,8 @@ export async function GET(request: NextRequest) {
     // Basic ranking: startsWith > includes; prefer NSE/EQ already handled in dedupe
     const scored = rows
       .map(r => {
-        const symbol = r.trading_symbol || '';
-        const name = r.name || '';
+        const symbol = r.TckrSymb || '';
+        const name = r.FinInstrmNm || '';
         const symbolLc = symbol.toLowerCase();
         const nameLc = name.toLowerCase();
         let score = -1;
@@ -101,14 +92,18 @@ export async function GET(request: NextRequest) {
         return { r, score };
       })
       .filter(x => x.score >= 0)
-      .sort((a, b) => b.score - a.score || a.r.trading_symbol.localeCompare(b.r.trading_symbol))
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        const aKey = (a.r.TckrSymb || a.r.FinInstrmNm || '').toString();
+        const bKey = (b.r.TckrSymb || b.r.FinInstrmNm || '').toString();
+        return aKey.localeCompare(bKey);
+      })
       .slice(0, limit)
       .map(x => ({
-        symbol: x.r.trading_symbol,
-        name: x.r.name || x.r.trading_symbol,
+        symbol: x.r.TckrSymb,
+        name: x.r.FinInstrmNm || x.r.TckrSymb,
         exchange: x.r.exchange,
-        series: x.r.series,
-        isin: x.r.isin
+        sector: x.r.Industry || 'Unknown'
       }));
 
     return NextResponse.json({ results: scored });

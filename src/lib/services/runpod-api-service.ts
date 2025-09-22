@@ -186,6 +186,10 @@ export class RunPodApiService {
       return result;
     } catch (error) {
       const endTime = performance.now();
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.warn(`⏰ [RUNPOD-API] Price fetch timeout/abort after ${(endTime - startTime).toFixed(2)}ms for ${symbol}`);
+        return null;
+      }
       console.error(`❌ [RUNPOD-API] Price fetch failed after ${(endTime - startTime).toFixed(2)}ms for ${symbol}:`, error);
       return null;
     }
@@ -401,12 +405,14 @@ export class RunPodApiService {
           const isTimeout = retryCount === 0; // First attempt timeout
           if (isTimeout) {
             console.log(`⏰ [RUNPOD-API] Request timed out after ${this.config.timeout}ms for ${url}`);
-            // Create a new error with the proper message instead of modifying the existing one
-            error = new Error(`Request timeout after ${this.config.timeout}ms`);
+            const e = new Error(`Request timeout after ${this.config.timeout}ms`);
+            (e as any).name = 'AbortError';
+            error = e;
           } else {
             console.log(`🚫 [RUNPOD-API] Request was aborted for ${url}`);
-            // Create a new error with the proper message instead of modifying the existing one
-            error = new Error(`Request was aborted`);
+            const e = new Error('Request was aborted');
+            (e as any).name = 'AbortError';
+            error = e;
           }
         }
       }

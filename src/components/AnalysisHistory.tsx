@@ -97,8 +97,8 @@ const AnalysisHistory: React.FC<AnalysisHistoryProps> = ({ darkMode, onSelectSes
           'Peer & Value Chain Read-through': session.result.summary,
           'Risks & Cautions': session.result.risk_factors?.join('\n') || ''
         },
-        created_at: session.timestamp,
-        completed_at: session.timestamp
+        created_at: session.timestamp.toISOString(),
+        completed_at: session.timestamp.toISOString()
       };
       
       await PDFGenerator.downloadPDF(analysisData);

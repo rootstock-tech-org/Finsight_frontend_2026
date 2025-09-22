@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-import { supabaseRealtimeService } from './supabase-realtime-service';
+import { supabaseRealtimeService, RealtimeCallback } from './supabase-realtime-service';
 import { WatchlistItem } from '@/lib/store/stock-store';
 
 export interface StockData {
@@ -140,7 +140,7 @@ export class RealTimeStockService {
   // Subscribe to real-time stock updates
   subscribeToStockUpdates(
     symbol: string,
-    callback: (payload: { new: StockData; old: StockData }) => void
+    callback: RealtimeCallback<StockData>
   ) {
     const subscriptionKey = `stock-${symbol}`;
     
@@ -156,7 +156,7 @@ export class RealTimeStockService {
 
   // Subscribe to market data updates
   subscribeToMarketDataUpdates(
-    callback: (payload: { new: MarketData; old: MarketData }) => void
+    callback: RealtimeCallback<MarketData>
   ) {
     const subscriptionKey = 'market-data';
     
@@ -172,7 +172,7 @@ export class RealTimeStockService {
 
   // Subscribe to news updates
   subscribeToNewsUpdates(
-    callback: (payload: { new: NewsItem; old: NewsItem }) => void
+    callback: RealtimeCallback<NewsItem>
   ) {
     const subscriptionKey = 'news';
     

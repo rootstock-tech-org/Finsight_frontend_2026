@@ -63,11 +63,29 @@ export async function GET(
         const statusResult = await ocrApi.getProcessingStatus(analysis.document_id);
         
         if (statusResult.status === 'completed' && statusResult.analysis) {
+          // Log the actual analysis response to debug company name extraction
+          console.log('🔍 [OCR-STATUS] Analysis result structure:', {
+            hasCompanyName: !!statusResult.analysis.company_name,
+            companyName: statusResult.analysis.company_name,
+            analysisKeys: Object.keys(statusResult.analysis),
+            fullAnalysis: JSON.stringify(statusResult.analysis, null, 2)
+          });
+
+          // Extract company name from analysis data - try multiple possible locations
+          const extractedCompanyName = statusResult.analysis.company_name || 
+                                     (statusResult.analysis as any)['Company Name'] ||
+                                     (statusResult.analysis as any).company ||
+                                     (statusResult.analysis as any).companyName ||
+                                     null;
+
+          console.log('🏢 [OCR-STATUS] Extracted company name:', extractedCompanyName);
+
           // Update database with completed analysis
           const { error: updateError } = await supabase
             .from('document_analysis')
             .update({
               status: 'completed',
+              company_name: extractedCompanyName || analysis.company_name,
               analysis_data: statusResult.analysis,
               completed_at: new Date().toISOString(),
               metadata: {
@@ -199,7 +217,18 @@ export async function PUT(
 
     if (status) updateData.status = status;
     if (error_message) updateData.error_message = error_message;
-    if (analysis_data) updateData.analysis_data = analysis_data;
+    if (analysis_data) {
+      updateData.analysis_data = analysis_data;
+      // Extract company name from analysis data if provided - try multiple possible locations
+      const extractedCompanyName = analysis_data.company_name || 
+                                 (analysis_data as any)['Company Name'] ||
+                                 (analysis_data as any).company ||
+                                 (analysis_data as any).companyName ||
+                                 null;
+      if (extractedCompanyName) {
+        updateData.company_name = extractedCompanyName;
+      }
+    }
     if (status === 'completed') updateData.completed_at = new Date().toISOString();
 
     const { data: updatedAnalysis, error: updateError } = await supabase

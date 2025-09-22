@@ -12,6 +12,7 @@ export interface AnalysisResult {
   timestamp: Date;
   document_type: 'image' | 'pdf' | 'url';
   document_name: string;
+  company_name?: string;
 }
 
 export interface AnalysisSession {
@@ -256,7 +257,7 @@ class AnalysisService {
     // Get auth token from store or localStorage
             // In production, you would get the actual token from Supabase
     const { user } = useAuthStore.getState();
-    return user?.uid || '';
+    return user?.id || '';
   }
 
   // Utility method to export analysis as PDF

@@ -61,6 +61,18 @@ export class ExternalStockApiService {
   }
 
   /**
+   * Resolve relative API route URLs to absolute origin (needed on server)
+   */
+  private resolveUrl(url: string): string {
+    if (/^https?:\/\//i.test(url)) return url;
+    const origin =
+      process.env.NEXT_PUBLIC_SITE_URL ||
+      process.env.SITE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${process.env.PORT || 3000}`);
+    return `${origin}${url.startsWith('/') ? url : `/${url}`}`;
+  }
+
+  /**
    * Search for stocks by query
    * Uses server-side proxy to avoid CORS issues
    */
@@ -316,7 +328,8 @@ export class ExternalStockApiService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
 
-      const response = await fetch(url, {
+      const finalUrl = this.resolveUrl(url);
+      const response = await fetch(finalUrl, {
         ...options,
         signal: controller.signal
       });

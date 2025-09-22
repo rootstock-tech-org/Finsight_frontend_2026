@@ -102,7 +102,8 @@ export class IndianStocksService {
     onUpdate: (symbol: string, price: number, changePercent: number) => void,
     options: { concurrency?: number } = {}
   ): Promise<void> {
-    const concurrency = options.concurrency ?? 4;
+    // Reduce concurrency to be gentle on the external API and avoid aborts
+    const concurrency = Math.max(1, Math.min(options.concurrency ?? 2, 3));
     const queue = [...items.map(i => i.symbol)];
     const workers: Promise<void>[] = [];
     const worker = async () => {
@@ -112,8 +113,11 @@ export class IndianStocksService {
         try {
           const { last_price, change_percent } = await this.getStockPrice(symbol);
           if (last_price > 0) onUpdate(symbol, last_price, change_percent || 0);
-        } catch (_) {
-          // ignore per-symbol failures
+        } catch (e) {
+          // Ignore expected abort/timeout errors quietly
+          if (e && (e as any).name === 'AbortError') {
+            continue;
+          }
         }
       }
     };

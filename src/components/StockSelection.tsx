@@ -19,8 +19,9 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'stocks'>('all');
   const [isSearching, setIsSearching] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [addingSymbols, setAddingSymbols] = useState<Set<string>>(new Set());
   const [liveDataEnabled, setLiveDataEnabled] = useState(false);
-  const [isDebouncing, setIsDebouncing] = useState(false);
+  // Removed debouncing to search immediately as user types
   const [watchlistError, setWatchlistError] = useState<string | null>(null);
   
   const { userTier } = useStockStore();
@@ -61,17 +62,9 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
       setStocksLoading(false);
       console.log('⚡ [STOCK-SELECTION] Rendered catalog immediately:', catalog.length);
 
-      // 2) Enrich prices incrementally and push updates (do not await)
-      void indianStocksService.enrichPrices(
-        catalog,
-        (symbol, price, change) => {
-          setPopularStocks(prev => prev.map(it => it.symbol === symbol ? { ...it, last_price: price, change_percent: change } : it));
-          setStocks(prev => prev.map(it => it.symbol === symbol ? { ...it, last_price: price, change_percent: change } : it));
-        },
-        { concurrency: 4 }
-      );
+      // Price enrichment disabled during browsing/search to avoid external timeouts
       const apiEndTime = performance.now();
-      console.log(`⏱️ [STOCK-SELECTION] Enrichment started in ${(apiEndTime - startTime).toFixed(2)}ms`);
+      console.log(`⏱️ [STOCK-SELECTION] Skipped price enrichment; rendered catalog in ${(apiEndTime - startTime).toFixed(2)}ms`);
     } catch (error) {
       const endTime = performance.now();
       console.error(`❌ [STOCK-SELECTION] Error loading popular stocks after ${(endTime - startTime).toFixed(2)}ms:`, error);
@@ -125,24 +118,12 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
       try {
         setStocksLoading(true);
         setStocksError(null);
-        setIsDebouncing(false); // Clear debouncing state when starting actual search
         
         // 1) Get fast search results (no prices) and render immediately
         const results = await indianStocksService.searchStocks(searchQuery);
         setStocks(results);
-        setStocksLoading(false); // allow list to render during enrichment
-        console.log(`⚡ [STOCK-SELECTION] Rendered ${results.length} search results (no prices)`);
-
-        // 2) Incrementally enrich prices
-        void indianStocksService.enrichPrices(
-          results,
-          (symbol, price, change) => {
-            setStocks(prev => prev.map(it => it.symbol === symbol ? { ...it, last_price: price, change_percent: change } : it));
-          },
-          { concurrency: 4 }
-        );
-        const endTime = performance.now();
-        console.log(`✅ [STOCK-SELECTION] Price enrichment started in ${(endTime - startTime).toFixed(2)}ms`);
+        setStocksLoading(false);
+        console.log(`⚡ [STOCK-SELECTION] Rendered ${results.length} search results (prices deferred)`);
       } catch (error) {
         const endTime = performance.now();
         console.error(`❌ [STOCK-SELECTION] Error fetching stocks after ${(endTime - startTime).toFixed(2)}ms:`, error);
@@ -154,15 +135,9 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
       }
     };
 
-    // Set debouncing state when search query changes
-    if (searchQuery.trim()) {
-      setIsDebouncing(true);
-    } else {
-      setIsDebouncing(false);
-    }
-
-    const timeoutId = setTimeout(fetchStocks, 2000); // Debounce search for 2 seconds
-    return () => clearTimeout(timeoutId);
+    // Run search immediately on each input change
+    void fetchStocks();
+    return () => {};
   }, [searchQuery, popularStocks]);
 
   // Search results with deduplication
@@ -175,6 +150,8 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
   const handleAdd = async (item: WatchlistItem) => {
     try {
       setWatchlistError(null); // Clear any previous errors
+      // Optimistically mark as adding for this symbol only
+      setAddingSymbols(prev => new Set(prev).add(item.symbol));
       await addToWatchlist(item.symbol, item.name);
     } catch (error) {
       console.error('Error adding to watchlist:', error);
@@ -183,6 +160,12 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
       
       // Auto-clear error after 5 seconds
       setTimeout(() => setWatchlistError(null), 5000);
+    } finally {
+      setAddingSymbols(prev => {
+        const next = new Set(prev);
+        next.delete(item.symbol);
+        return next;
+      });
     }
   };
 
@@ -228,12 +211,7 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-10 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
             />
-            {isDebouncing && searchQuery.trim() && (
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2 flex items-center space-x-1">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-green-600"></div>
-                <span className="text-xs text-gray-500 dark:text-gray-400">Searching in 2s...</span>
-              </div>
-            )}
+            {/* No debounce indicator; searching happens immediately */}
           </div>
         </div>
 
@@ -274,12 +252,10 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
         </div>
 
         {/* Loading State */}
-        {(stocksLoading || isDebouncing) && (
+        {stocksLoading && (
           <div className="text-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-green-600 mx-auto"></div>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              {isDebouncing ? 'Waiting for you to finish typing...' : 'Loading stocks...'}
-            </p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">Loading stocks...</p>
           </div>
         )}
 
@@ -346,27 +322,29 @@ const StockSelection: React.FC<StockSelectionProps> = ({ darkMode, onComplete })
                       <span className="px-1.5 sm:px-2 py-0.5 sm:py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs font-medium rounded">
                         {item.type === 'stock' ? 'Stock' : 'MF'}
                       </span>
-                      {item.sector && (
-                        <span className="px-1.5 sm:px-2 py-0.5 sm:py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs font-medium rounded truncate max-w-20 sm:max-w-none">
-                          {item.sector}
-                        </span>
-                      )}
+                      {/* Sector pill removed to avoid duplication with left-side sector text */}
                     </div>
                     
                     {/* Add/Remove Button */}
                     <button
                       onClick={() => inWatchlist ? handleRemove(item.symbol) : handleAdd(item)}
-                      disabled={watchlistLoading || (!inWatchlist && watchlist.length >= 10)}
+                      disabled={(!inWatchlist && (watchlist.length >= 10 || addingSymbols.has(item.symbol)))}
                       className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg transition-colors text-xs sm:text-sm font-medium ${
                         inWatchlist
                           ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 border border-green-300 dark:border-green-700'
                           : watchlist.length >= 10
                           ? 'bg-gray-100 dark:bg-gray-700 text-gray-400 dark:text-gray-500 border border-gray-300 dark:border-gray-600 cursor-not-allowed'
+                          : addingSymbols.has(item.symbol)
+                          ? 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border border-gray-300 dark:border-gray-600'
                           : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 border border-gray-300 dark:border-gray-600'
-                      } ${watchlistLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      }`}
                       title={!inWatchlist && watchlist.length >= 10 ? 'Watchlist limit reached (10/10)' : ''}
                     >
-                      {inWatchlist ? 'Added' : <Plus className="w-3 h-3 sm:w-4 sm:h-4" />}
+                      {inWatchlist ? 'Added' : (
+                        addingSymbols.has(item.symbol)
+                          ? <span className="inline-flex items-center"><span className="animate-spin rounded-full h-3 w-3 border-b-2 border-gray-500 mr-1"></span>Adding</span>
+                          : <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                      )}
                     </button>
                   </div>
                 </div>

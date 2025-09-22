@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from '../context/LanguageContext';
-import { Search, Trash2, ArrowLeft, Plus } from 'lucide-react';
+import { Search, Trash2, ArrowLeft, Plus, RefreshCw } from 'lucide-react';
 import { useStockStore } from '@/lib/store/stock-store';
 import { useWatchlist } from '@/hooks/useWatchlist';
 import { Button } from './ui/button';
@@ -19,15 +19,28 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
     watchlist, 
     loading: isLoading, 
     error, 
-    removeFromWatchlist 
+    removeFromWatchlist,
+    refetch
   } = useWatchlist();
   const [searchTerm, setSearchTerm] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const handleRemoveItem = async (symbol: string) => {
     try {
       await removeFromWatchlist(symbol);
     } catch (err) {
       console.error('Error removing item:', err);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } catch (err) {
+      console.error('Error refreshing watchlist:', err);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -43,16 +56,23 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
   const mutualFunds = filteredItems.filter(item => item.type === 'mf');
 
   const formatPrice = (price?: number) => {
-    if (!price) return 'N/A';
+    if (!price || price <= 0) return 'N/A';
     return `₹${price.toFixed(2)}`;
   };
 
   const formatChange = (changePercent?: number) => {
-    if (changePercent === undefined) return null;
+    if (changePercent === undefined || changePercent === null) return null;
     const isPositive = changePercent >= 0;
     const sign = isPositive ? '+' : '';
     const color = isPositive ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400';
     return <span className={`text-sm ${color}`}>{sign}{changePercent.toFixed(2)}%</span>;
+  };
+
+  const getPriceData = (item: any) => {
+    // Check multiple possible price sources
+    const price = item.last_price || item.stocks?.current_price || item.current_price;
+    const changePercent = item.change_percent || item.stocks?.price_change_percent || item.price_change_percent;
+    return { price, changePercent };
   };
 
   const tierLimits = { FREE: 10, PREMIUM: 50, PRO: 100 } as const;
@@ -76,11 +96,23 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
               You will receive notifications for all stocks and mutual funds in your watchlist.
             </p>
           </div>
-          {onSelectMoreStocks && (
-            <Button onClick={onSelectMoreStocks} className="bg-blue-600 hover:bg-blue-700 text-white">
-              Select More Stocks
+          <div className="flex items-center space-x-2">
+            <Button 
+              onClick={handleRefresh} 
+              disabled={refreshing || isLoading}
+              variant="outline" 
+              size="sm"
+              className="flex items-center space-x-1"
+            >
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
             </Button>
-          )}
+            {onSelectMoreStocks && (
+              <Button onClick={onSelectMoreStocks} className="bg-blue-600 hover:bg-blue-700 text-white">
+                Select More Stocks
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Search Bar */}
@@ -102,6 +134,16 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
           <div className="flex justify-center items-center py-8">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
             <span className="ml-3 text-gray-700 dark:text-gray-300">Loading watchlist...</span>
+          </div>
+        )}
+
+        {/* Refreshing State */}
+        {refreshing && !isLoading && (
+          <div className="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
+            <div className="flex items-center">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-2"></div>
+              <span className="text-blue-700 dark:text-blue-300 text-sm">Refreshing prices...</span>
+            </div>
           </div>
         )}
 
@@ -132,26 +174,47 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
               </div>
             ) : (
               <div className="space-y-3">
-                {stocks.map((item) => (
-                  <div key={item.symbol} className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-shadow">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{item.name}</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">[{item.symbol}]</p>
-                      {item.last_price && (
+                {stocks.map((item) => {
+                  const { price, changePercent } = getPriceData(item);
+                  const hasPrice = price && price > 0;
+                  
+                  return (
+                    <div key={item.symbol} className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-shadow">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{item.name}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">[{item.symbol}]</p>
                         <div className="mt-2">
-                          <span className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(item.last_price)}</span>
-                          {item.change_percent !== undefined && (<span className="ml-2">{formatChange(item.change_percent)}</span>)}
+                          {hasPrice ? (
+                            <>
+                              <span className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(price)}</span>
+                              {changePercent !== undefined && changePercent !== null && (
+                                <span className="ml-2">{formatChange(changePercent)}</span>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">Loading price...</span>
+                              <button 
+                                onClick={() => handleRefresh()} 
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                disabled={refreshing}
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs font-medium rounded">Stock</span>
+                        <button onClick={() => handleRemoveItem(item.symbol)} className="p-1 rounded-lg transition-colors text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" aria-label={`Remove ${item.name} from watchlist`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs font-medium rounded">Stock</span>
-                      <button onClick={() => handleRemoveItem(item.symbol)} className="p-1 rounded-lg transition-colors text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" aria-label={`Remove ${item.name} from watchlist`}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -169,26 +232,47 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
               </div>
             ) : (
               <div className="space-y-3">
-                {mutualFunds.map((item) => (
-                  <div key={item.symbol} className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-shadow">
-                    <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 dark:text-white">{item.name}</h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">[{item.symbol}]</p>
-                      {item.last_price && (
+                {mutualFunds.map((item) => {
+                  const { price, changePercent } = getPriceData(item);
+                  const hasPrice = price && price > 0;
+                  
+                  return (
+                    <div key={item.symbol} className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-sm transition-shadow">
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">{item.name}</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">[{item.symbol}]</p>
                         <div className="mt-2">
-                          <span className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(item.last_price)}</span>
-                          {item.change_percent !== undefined && (<span className="ml-2">{formatChange(item.change_percent)}</span>)}
+                          {hasPrice ? (
+                            <>
+                              <span className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(price)}</span>
+                              {changePercent !== undefined && changePercent !== null && (
+                                <span className="ml-2">{formatChange(changePercent)}</span>
+                              )}
+                            </>
+                          ) : (
+                            <div className="flex items-center space-x-2">
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">Loading price...</span>
+                              <button 
+                                onClick={() => handleRefresh()} 
+                                className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                                disabled={refreshing}
+                              >
+                                Retry
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs font-medium rounded">MF</span>
+                        <button onClick={() => handleRemoveItem(item.symbol)} className="p-1 rounded-lg transition-colors text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" aria-label={`Remove ${item.name} from watchlist`}>
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <span className="px-2 py-1 bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs font-medium rounded">MF</span>
-                      <button onClick={() => handleRemoveItem(item.symbol)} className="p-1 rounded-lg transition-colors text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20" aria-label={`Remove ${item.name} from watchlist`}>
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

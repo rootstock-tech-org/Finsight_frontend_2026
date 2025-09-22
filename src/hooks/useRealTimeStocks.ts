@@ -131,7 +131,9 @@ export function useRealTimeStockDetails(symbol: string) {
     if (!symbol) return;
 
     const channel = realTimeStockService.subscribeToStockUpdates(symbol, (payload) => {
-      setStock(payload.new);
+      if (payload.new && 'symbol' in payload.new) {
+        setStock(payload.new as StockData);
+      }
     });
 
     return () => {

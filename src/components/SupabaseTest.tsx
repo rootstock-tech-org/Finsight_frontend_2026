@@ -88,7 +88,7 @@ export default function SupabaseTest() {
   const testSignUp = async () => {
     try {
       const testEmail = `test${Date.now()}@gmail.com`
-      const { user, error } = await signUp(testEmail, 'testpassword123', 'Test User')
+      const { user, error } = await signUp(testEmail, 'testpassword123', 'Test', 'User', '1234567890', 'whatsapp', 'daily')
       
       if (error) {
         console.error('Signup error:', error)
@@ -112,7 +112,7 @@ export default function SupabaseTest() {
   const testDirectSignUp = async () => {
     try {
       const testEmail = `direct${Date.now()}@gmail.com`
-      const { user, error } = await signUp(testEmail, 'testpassword123', 'Direct Test User')
+      const { user, error } = await signUp(testEmail, 'testpassword123', 'Direct', 'Test', '1234567890', 'whatsapp', 'daily')
       
       if (error) {
         console.error('Direct signup error:', error)
@@ -136,7 +136,7 @@ export default function SupabaseTest() {
   const testRealEmailSignUp = async () => {
     try {
       const testEmail = `realtest${Date.now()}@testdomain.org`
-      const { user, error } = await signUp(testEmail, 'testpassword123', 'Real Test User')
+      const { user, error } = await signUp(testEmail, 'testpassword123', 'Real', 'Test', '1234567890', 'whatsapp', 'daily')
       
       if (error) {
         console.error('Real email signup error:', error)
@@ -164,7 +164,7 @@ export default function SupabaseTest() {
       const password = 'testpassword123'
       
       // First create the account
-      const { user: signupUser, error: signupError } = await signUp(testEmail, password, 'Login Test User')
+      const { user: signupUser, error: signupError } = await signUp(testEmail, password, 'Login', 'Test', '1234567890', 'whatsapp', 'daily')
       if (signupError || !signupUser) {
         console.error('Login test signup failed:', signupError)
         setMessages(prev => ({ ...prev, 'Login': `Signup failed: ${signupError?.message || 'Unknown error'}` }))

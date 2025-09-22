@@ -112,50 +112,70 @@ export class PDFGenerator {
     // Analysis Data
     if (analysis.analysis_data) {
       const data = analysis.analysis_data;
-      
-      // Key Insights
-      if (data['Key Insights'] && isValidContent(data['Key Insights'])) {
-        addSectionHeader('Key Insights');
-        if (Array.isArray(data['Key Insights'])) {
-          data['Key Insights'].forEach((insight: string, index: number) => {
-            if (isValidContent(insight)) {
-              addText(`${index + 1}. ${insight}`, 11);
-            }
-          });
-        } else {
-          addText(data['Key Insights'], 11);
+
+      // Helpers to find content across naming variants
+      const norm = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const findValue = (aliases: string[]): any => {
+        const keys = Object.keys(data);
+        const aliasSet = new Set(aliases.map(norm));
+        for (const key of keys) {
+          if (aliasSet.has(norm(key))) return data[key];
+        }
+        return undefined;
+      };
+
+      // Keep track of printed keys to avoid duplicates
+      const printedKeys = new Set<string>();
+      const markPrinted = (aliases: string[]) => aliases.forEach(a => printedKeys.add(norm(a)));
+
+      // Ordered sections with aliases to support multiple providers/key styles
+      const sections: Array<{ title: string; aliases: string[] }> = [
+        { title: 'Key Insights', aliases: ['Key Insights', 'key_insights', 'insights', 'Highlights'] },
+        { title: 'Event Snapshot', aliases: ['Event Snapshot', 'event_snapshot', 'Event Overview'] },
+        { title: 'Finsight Insight', aliases: ['Finsight Insight', 'Finsight-Insight', 'finsight_insight'] },
+        { title: 'Impact on Indian Markets', aliases: ['Impact on Indian Markets', 'impact_on_indian_markets'] },
+        { title: 'Peer & Value Chain Read-through', aliases: ['Peer & Value Chain Read-through', 'peer_value_chain_read_through', 'peer & value chain read-through'] },
+        { title: 'Winners vs Losers (Sector/Stocks)', aliases: ['Winners vs Losers (Sector/Stocks)', 'winners vs losers (sector/stocks)', 'winners_vs_losers', 'Winners Vs Losers (sector/stocks)'] },
+        { title: 'Trade Measure Snapshot', aliases: ['Trade Measure Snapshot', 'trade_measure_snapshot'] },
+        { title: 'India Trade Linkages', aliases: ['India Trade Linkages', 'india_trade_linkages'] },
+        { title: 'Data Snapshot', aliases: ['Data Snapshot', 'data_snapshot'] },
+        { title: 'Signal Interpretation', aliases: ['Signal Interpretation', 'signal_interpretation'] },
+        { title: 'Summary', aliases: ['Summary', 'summary'] },
+        { title: 'Risks & Cautions', aliases: ['Risks & Cautions', 'risks & cautions', 'risks_and_cautions', 'risks', 'cautions'] },
+      ];
+
+      for (const section of sections) {
+        const val = findValue(section.aliases);
+        if (isValidContent(val)) {
+          addSectionHeader(section.title);
+          if (Array.isArray(val)) {
+            val.forEach((item: any, idx: number) => {
+              if (isValidContent(item)) addText(`${idx + 1}. ${String(item)}`, 11);
+            });
+          } else {
+            addText(String(val), 11);
+          }
+          markPrinted(section.aliases);
         }
       }
-      
-      // Event Snapshot
-      if (data['Event Snapshot'] && isValidContent(data['Event Snapshot'])) {
-        addSectionHeader('Event Snapshot');
-        addText(data['Event Snapshot'], 11);
-      }
-      
-      // Finsight Insight
-      if (data['Finsight Insight'] && isValidContent(data['Finsight Insight'])) {
-        addSectionHeader('Finsight Insight');
-        addText(data['Finsight Insight'], 11);
-      }
-      
-      // Impact on Indian Markets
-      if (data['Impact on Indian Markets'] && isValidContent(data['Impact on Indian Markets'])) {
-        addSectionHeader('Impact on Indian Markets');
-        addText(data['Impact on Indian Markets'], 11);
-      }
-      
-      // Peer & Value Chain Read-through
-      if (data['Peer & Value Chain Read-through'] && isValidContent(data['Peer & Value Chain Read-through'])) {
-        addSectionHeader('Peer & Value Chain Read-through');
-        addText(data['Peer & Value Chain Read-through'], 11);
-      }
-      
-      // Risks & Cautions
-      if (data['Risks & Cautions'] && isValidContent(data['Risks & Cautions'])) {
-        addSectionHeader('Risks & Cautions');
-        addText(data['Risks & Cautions'], 11);
-      }
+
+      // Print any remaining non-empty fields as a generic Key Insights list
+      try {
+        const excluded = new Set(['company','document_type','ir_subtype','processing_time','cached','timestamp','document_id','category','news_category','newsCategory']);
+        const remainingEntries = Object.entries(data).filter(([k, v]) => !printedKeys.has(norm(k)) && !excluded.has(k) && isValidContent(v));
+        if (remainingEntries.length > 0) {
+          addSectionHeader('Additional Insights');
+          for (const [k, v] of remainingEntries) {
+            const title = k.replace(/_/g, ' ').replace(/\s+/g, ' ').replace(/(^|\s)\w/g, (m) => m.toUpperCase());
+            addText(`${title}:`, 12, true);
+            if (Array.isArray(v)) {
+              v.forEach((item: any, idx: number) => isValidContent(item) && addText(`- ${String(item)}`, 11));
+            } else {
+              addText(String(v), 11);
+            }
+          }
+        }
+      } catch (_) {}
     }
     
     // Footer with disclaimer

@@ -14,8 +14,6 @@ export default function SupabaseDebug() {
     try {
       console.log('=== SUPABASE DEBUG INFO ===');
       console.log('Supabase client:', supabase);
-      console.log('Supabase URL:', supabase.supabaseUrl);
-      console.log('Supabase key exists:', !!supabase.supabaseKey);
       console.log('Environment:', process.env.NODE_ENV);
       console.log('Public URL env:', process.env.NEXT_PUBLIC_SUPABASE_URL);
       console.log('Public key env:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? 'SET' : 'NOT SET');

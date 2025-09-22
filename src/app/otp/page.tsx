@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { useTranslation } from "../../context/LanguageContext";
 import {
   Eye,
@@ -13,7 +13,7 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { useSupabase } from "../../components/providers/SupabaseProvider";
 
-export default function OTPPage() {
+function OTPForm() {
   const { t } = useTranslation();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -180,7 +180,6 @@ export default function OTPPage() {
     }
   };
 
-
   const goBack = () => {
     if (currentStep === "otp") {
       setCurrentStep("email");
@@ -303,93 +302,93 @@ export default function OTPPage() {
             </form>
           )}
 
-                     {/* Step 2: OTP Form */}
-           {currentStep === "otp" && (
-             <form onSubmit={handleVerifyOTP} className="space-y-4 sm:space-y-6">
-               <div>
-                 <label className="block text-xs sm:text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                   OTP Code
-                 </label>
-                 <input
-                   type="text"
-                   value={otp}
-                   onChange={(e) => setOtp(e.target.value)}
-                   placeholder="Enter 6-digit OTP"
-                   maxLength={6}
-                   className="w-full px-3 sm:px-4 py-2 sm:py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-green-700 dark:focus:ring-green-400 focus:border-green-700 dark:focus:border-green-400 text-center text-lg tracking-widest"
-                   required
-                 />
-               </div>
+          {/* Step 2: OTP Form */}
+          {currentStep === "otp" && (
+            <form onSubmit={handleVerifyOTP} className="space-y-4 sm:space-y-6">
+              <div>
+                <label className="block text-xs sm:text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  OTP Code
+                </label>
+                <input
+                  type="text"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  placeholder="Enter 6-digit OTP"
+                  maxLength={6}
+                  className="w-full px-3 sm:px-4 py-2 sm:py-3 rounded-xl border transition-colors focus:outline-none focus:ring-2 bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-green-700 dark:focus:ring-green-400 focus:border-green-700 dark:focus:border-green-400 text-center text-lg tracking-widest"
+                  required
+                />
+              </div>
 
-               {/* Timer and Resend */}
-               <div className="text-center">
-                 {timeLeft > 0 ? (
-                   <p className="text-sm text-gray-600 dark:text-gray-400">
-                     OTP expires in {timeLeft} seconds
-                   </p>
-                 ) : (
-                   <button
-                     type="button"
-                     onClick={handleResendOTP}
-                     disabled={loading}
-                     className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
-                   >
-                     Resend OTP
-                   </button>
-                 )}
-               </div>
+              {/* Timer and Resend */}
+              <div className="text-center">
+                {timeLeft > 0 ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    OTP expires in {timeLeft} seconds
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleResendOTP}
+                    disabled={loading}
+                    className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 disabled:opacity-50"
+                  >
+                    Resend OTP
+                  </button>
+                )}
+              </div>
 
-               {/* Retry counter */}
-               {retries > 0 && (
-                 <div className="text-center">
-                   <p className="text-xs text-orange-600 dark:text-orange-400">
-                     Attempts: {retries}/{maxRetries}
-                   </p>
-                 </div>
-               )}
+              {/* Retry counter */}
+              {retries > 0 && (
+                <div className="text-center">
+                  <p className="text-xs text-orange-600 dark:text-orange-400">
+                    Attempts: {retries}/{maxRetries}
+                  </p>
+                </div>
+              )}
 
-               <button
-                 type="submit"
-                 disabled={loading || timeLeft === 0 || retries >= maxRetries}
-                 style={{ backgroundColor: '#3B82F6', color: '#F5F6F7' }}
-                 className={`w-full px-8 py-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-teal-glow cursor-pointer ${
-                   loading || timeLeft === 0 || retries >= maxRetries ? "opacity-70 cursor-not-allowed" : ""
-                 } hover:opacity-90`}
-               >
-                 {loading ? (
-                   <span className="flex items-center justify-center">
-                     <svg
-                       className="animate-spin -ml-1 mr-2 h-5 w-5"
-                       xmlns="http://www.w3.org/2000/svg"
-                       fill="none"
-                       viewBox="0 0 24 24"
-                     >
-                       <circle
-                         className="opacity-25"
-                         cx="12"
-                         cy="12"
-                         r="10"
-                         stroke="currentColor"
-                         strokeWidth="4"
-                       ></circle>
-                       <path
-                         className="opacity-75"
-                         fill="currentColor"
-                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                       ></path>
-                     </svg>
-                     Verifying...
-                   </span>
-                 ) : retries >= maxRetries ? (
-                   "Too Many Attempts"
-                 ) : timeLeft === 0 ? (
-                   "OTP Expired"
-                 ) : (
-                   "Verify OTP"
-                 )}
-               </button>
-             </form>
-           )}
+              <button
+                type="submit"
+                disabled={loading || timeLeft === 0 || retries >= maxRetries}
+                style={{ backgroundColor: '#3B82F6', color: '#F5F6F7' }}
+                className={`w-full px-8 py-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 shadow-teal-glow cursor-pointer ${
+                  loading || timeLeft === 0 || retries >= maxRetries ? "opacity-70 cursor-not-allowed" : ""
+                } hover:opacity-90`}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center">
+                    <svg
+                      className="animate-spin -ml-1 mr-2 h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Verifying...
+                  </span>
+                ) : retries >= maxRetries ? (
+                  "Too Many Attempts"
+                ) : timeLeft === 0 ? (
+                  "OTP Expired"
+                ) : (
+                  "Verify OTP"
+                )}
+              </button>
+            </form>
+          )}
 
           {/* Step 3: New Password Form */}
           {currentStep === "newPassword" && (
@@ -541,5 +540,24 @@ export default function OTPPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+        <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+      </div>
+    </div>
+  );
+}
+
+export default function OTPPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <OTPForm />
+    </Suspense>
   );
 }

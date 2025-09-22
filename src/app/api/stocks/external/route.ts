@@ -41,9 +41,11 @@ export async function GET(request: NextRequest) {
         }
 
         const priceData = await externalStockApi.getStockPrice(symbol);
+        // Avoid duplicate 'symbol' key spread; ensure final symbol is uppercase
+        const { symbol: _ignored, ...rest } = priceData as any;
         return NextResponse.json({
           symbol: symbol.toUpperCase(),
-          ...priceData
+          ...rest
         });
 
       case 'search-and-price':

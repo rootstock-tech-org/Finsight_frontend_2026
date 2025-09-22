@@ -174,7 +174,6 @@ export class SupabaseAuthService {
   async signInWithOtp(email: string): Promise<{ error: AuthError | null }> {
     try {
       console.log('🔐 Attempting to send OTP to:', email);
-      console.log('🔧 Supabase client URL:', supabase.supabaseUrl);
       
       const { data, error } = await supabase.auth.signInWithOtp({ 
         email,
@@ -187,7 +186,6 @@ export class SupabaseAuthService {
         console.error('❌ OTP Error Details:', {
           message: error.message,
           status: error.status,
-          statusText: error.statusText,
           name: error.name,
         });
       } else {

@@ -519,14 +519,3 @@ export class OCRApiService {
 // Export singleton instance
 export const ocrApi = new OCRApiService();
 
-// Export types for use in other files
-export type {
-  DocumentAnalysisRequest,
-  DocumentAnalysisResponse,
-  DocumentAnalysis,
-  SearchRequest,
-  SearchResult,
-  CacheStats,
-  DocumentType
-};
-

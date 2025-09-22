@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       'auth.users'
     ];
 
-    const tableResults = {};
+    const tableResults: Record<string, string> = {};
 
     for (const tableName of tablesToTest) {
       try {
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
           tableResults[tableName] = 'accessible';
         }
       } catch (e) {
-        tableResults[tableName] = `exception: ${e.message}`;
+        tableResults[tableName] = `exception: ${e instanceof Error ? e.message : String(e)}`;
       }
     }
 
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
         schemaInfo = 'rpc_accessible';
       }
     } catch (e) {
-      schemaInfo = `rpc_exception: ${e.message}`;
+      schemaInfo = `rpc_exception: ${e instanceof Error ? e.message : String(e)}`;
     }
 
     return NextResponse.json({

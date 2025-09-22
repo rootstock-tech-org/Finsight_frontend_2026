@@ -5,7 +5,7 @@ export async function GET() {
   try {
     console.log('Testing RunPod API integration...');
     
-    const results = {
+    const results: { timestamp: string; tests: Array<Record<string, unknown>> } = {
       timestamp: new Date().toISOString(),
       tests: []
     };

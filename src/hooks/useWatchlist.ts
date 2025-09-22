@@ -10,7 +10,7 @@ export function useWatchlist() {
   const { user } = useAuthStore();
 
   // Fetch watchlist
-  const fetchWatchlist = useCallback(async () => {
+  const fetchWatchlist = useCallback(async (background: boolean = false) => {
     if (!user?.id) {
       setWatchlist([]);
       setLoading(false);
@@ -18,20 +18,42 @@ export function useWatchlist() {
     }
 
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
       setError(null);
       
       const apiItems = await watchlistService.fetchWatchlist(user.id);
-      const watchlistItems = apiItems.map(item => 
-        watchlistService.apiItemToWatchlistItem(item)
-      );
+      let watchlistItems = apiItems.map(item => watchlistService.apiItemToWatchlistItem(item));
+
+      // Merge with local price cache for instant/consistent display
+      try {
+        const TTL_MS = 5 * 60 * 1000;
+        watchlistItems = watchlistItems.map((wi) => {
+          if (typeof wi.last_price === 'number' && wi.last_price > 0) return wi;
+          const raw = localStorage.getItem(`price_cache_${wi.symbol}`);
+          if (!raw) return wi;
+          try {
+            const cached = JSON.parse(raw) as { price: number; ts: number; changePercent?: number };
+            if (cached && typeof cached.price === 'number' && Date.now() - (cached.ts || 0) <= TTL_MS) {
+              return { ...wi, last_price: cached.price, change_percent: cached.changePercent ?? wi.change_percent };
+            }
+          } catch (_) {}
+          return wi;
+        });
+      } catch (_) {}
       
       setWatchlist(watchlistItems);
+
+      // Cache in localStorage for instant render on next visit
+      try {
+        const cacheKey = `watchlist_cache_${user.id}`;
+        const payload = { ts: Date.now(), items: apiItems };
+        localStorage.setItem(cacheKey, JSON.stringify(payload));
+      } catch (_) {}
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch watchlist');
       console.error('Error fetching watchlist:', err);
     } finally {
-      setLoading(false);
+      if (!background) setLoading(false);
     }
   }, [user?.id]);
 
@@ -57,8 +79,8 @@ export function useWatchlist() {
       const watchlistItem = watchlistService.apiItemToWatchlistItem(newItem);
       setWatchlist(prev => [watchlistItem, ...prev]);
       
-      // Also refresh from server to ensure consistency
-      await fetchWatchlist();
+      // Also refresh from server to ensure consistency (background, non-blocking)
+      fetchWatchlist(true);
     } catch (err) {
       console.error('Error adding to watchlist:', err);
       throw err;
@@ -87,10 +109,37 @@ export function useWatchlist() {
     return watchlist.some(item => item.symbol === symbol);
   }, [watchlist]);
 
-  // Initial fetch
+  // Initial fetch with cache-first strategy
   useEffect(() => {
-    fetchWatchlist();
-  }, [fetchWatchlist]);
+    if (!user?.id) {
+      setWatchlist([]);
+      setLoading(false);
+      return;
+    }
+
+    // Try cache first
+    let usedCache = false;
+    try {
+      const cacheKey = `watchlist_cache_${user.id}`;
+      const raw = localStorage.getItem(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { ts: number; items: any[] };
+        if (parsed && Array.isArray(parsed.items)) {
+          const cachedItems = parsed.items.map(item => watchlistService.apiItemToWatchlistItem(item));
+          setWatchlist(cachedItems);
+          setLoading(false);
+          usedCache = true;
+        }
+      }
+    } catch (_) {}
+
+    // Always refresh in background; if no cache, do a foreground load
+    if (usedCache) {
+      fetchWatchlist(true);
+    } else {
+      fetchWatchlist(false);
+    }
+  }, [user?.id, fetchWatchlist]);
 
   return {
     watchlist,

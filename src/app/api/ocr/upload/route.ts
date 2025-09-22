@@ -210,11 +210,29 @@ export async function POST(request: NextRequest) {
         analysisResult = await ocrApi.analyzeDocument(ocrRequest);
         
         if (analysisResult.status === 'completed' && analysisResult.analysis) {
+          // Log the actual analysis response to debug company name extraction
+          console.log('🔍 [OCR-UPLOAD] Analysis result structure:', {
+            hasCompanyName: !!analysisResult.analysis.company_name,
+            companyName: analysisResult.analysis.company_name,
+            analysisKeys: Object.keys(analysisResult.analysis),
+            fullAnalysis: JSON.stringify(analysisResult.analysis, null, 2)
+          });
+
+          // Extract company name from analysis data - try multiple possible locations
+          const extractedCompanyName = analysisResult.analysis.company_name || 
+                                     (analysisResult.analysis as any)['Company Name'] ||
+                                     (analysisResult.analysis as any).company ||
+                                     (analysisResult.analysis as any).companyName ||
+                                     null;
+
+          console.log('🏢 [OCR-UPLOAD] Extracted company name:', extractedCompanyName);
+
           // Update record with analysis results
           await supabase
             .from('document_analysis')
             .update({
               status: 'completed',
+              company_name: extractedCompanyName || analysisRecord.company_name,
               analysis_data: analysisResult.analysis,
               metadata: {
                 ...analysisRecord.metadata,
