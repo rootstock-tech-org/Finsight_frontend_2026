@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { normalizeToBackendSymbol } from '@/lib/services/symbol-resolver';
 
 // Allow failover across multiple proxy hosts
 const RUNPOD_HOSTS = (
@@ -12,6 +13,7 @@ export async function GET(
 ) {
   try {
     const { symbol } = await params;
+    const norm = normalizeToBackendSymbol(symbol);
 
     if (!symbol) {
       return NextResponse.json({ error: 'Symbol parameter is required' }, { status: 400 });
@@ -23,7 +25,7 @@ export async function GET(
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2500);
       try {
-        const response = await fetch(`${host}/api/stock/${encodeURIComponent(symbol)}/price`, {
+        const response = await fetch(`${host}/api/stock/${encodeURIComponent(norm)}/price`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal

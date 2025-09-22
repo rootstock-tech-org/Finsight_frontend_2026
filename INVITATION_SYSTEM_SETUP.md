@@ -80,7 +80,7 @@ function InvitationForm() {
   } = useInvitationForm({
     autoLoad: true,
     autoSave: true,
-    saveDelay: 2000
+    saveDelay: 1000
   });
 
   // Auto-save form data

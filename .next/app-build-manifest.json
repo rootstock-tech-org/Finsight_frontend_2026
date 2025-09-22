@@ -26,15 +26,25 @@
       "static/chunks/main-app.js",
       "static/chunks/app/api/watchlist/route.js"
     ],
-    "/stocks/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/stocks/page.js"
-    ],
     "/api/external-stocks/price/[symbol]/route": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/api/external-stocks/price/[symbol]/route.js"
+    ],
+    "/api/stock/[symbol]/price/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/stock/[symbol]/price/route.js"
+    ],
+    "/watchlist/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/watchlist/page.js"
+    ],
+    "/stocks/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/stocks/page.js"
     ]
   }
 }
