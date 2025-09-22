@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
     // Improve hydration resilience
     optimizePackageImports: ['@supabase/supabase-js'],
   },
+  compiler: {
+    // Strip console.* in production client bundles
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn']
+    } : false
+  }
 };
 
 export default nextConfig;

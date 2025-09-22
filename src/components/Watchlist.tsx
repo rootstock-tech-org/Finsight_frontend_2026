@@ -55,9 +55,10 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
   const stocks = filteredItems.filter(item => item.type === 'stock');
   const mutualFunds = filteredItems.filter(item => item.type === 'mf');
 
-  const formatPrice = (price?: number) => {
+  const formatPrice = (price?: number, isMock?: boolean) => {
     if (!price || price <= 0) return 'N/A';
-    return `₹${price.toFixed(2)}`;
+    const formatted = `₹${price.toFixed(2)}`;
+    return isMock ? `${formatted} ⚡` : formatted; // Add lightning emoji for mock data
   };
 
   const formatChange = (changePercent?: number) => {
@@ -72,7 +73,9 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
     // Check multiple possible price sources
     const price = item.last_price || item.stocks?.current_price || item.current_price;
     const changePercent = item.change_percent || item.stocks?.price_change_percent || item.price_change_percent;
-    return { price, changePercent };
+    const isMock = item.mock || item.stocks?.mock || false;
+    const isStale = item.stale || item.cached || false;
+    return { price, changePercent, isMock, isStale };
   };
 
   const tierLimits = { FREE: 10, PREMIUM: 50, PRO: 100 } as const;
@@ -137,6 +140,27 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
           </div>
         )}
 
+        {/* API Status Banner */}
+        {/* <div className="mb-4">
+          <div className="p-3 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-700">
+            <div className="flex items-center">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.485 3.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 3.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">
+                  Live Data Service Temporarily Unavailable
+                </h3>
+                <div className="mt-1 text-sm text-yellow-700 dark:text-yellow-300">
+                  <p>We're currently showing demo data with realistic price movements. Live data will resume automatically when our service is restored.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div> */}
+
         {/* Refreshing State */}
         {refreshing && !isLoading && (
           <div className="mb-4 p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700">
@@ -175,7 +199,7 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
             ) : (
               <div className="space-y-3">
                 {stocks.map((item) => {
-                  const { price, changePercent } = getPriceData(item);
+                  const { price, changePercent, isMock, isStale } = getPriceData(item);
                   const hasPrice = price && price > 0;
                   
                   return (
@@ -186,9 +210,25 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
                         <div className="mt-2">
                           {hasPrice ? (
                             <>
-                              <span className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(price)}</span>
+                              <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                                {formatPrice(price, isMock)}
+                              </span>
                               {changePercent !== undefined && changePercent !== null && (
                                 <span className="ml-2">{formatChange(changePercent)}</span>
+                              )}
+                              {(isMock || isStale) && (
+                                <div className="flex items-center mt-1">
+                                  {isMock && (
+                                    <span className="text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded mr-2">
+                                      Demo Data ⚡
+                                    </span>
+                                  )}
+                                  {isStale && !isMock && (
+                                    <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-2 py-1 rounded">
+                                      Cached
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </>
                           ) : (
@@ -233,7 +273,7 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
             ) : (
               <div className="space-y-3">
                 {mutualFunds.map((item) => {
-                  const { price, changePercent } = getPriceData(item);
+                  const { price, changePercent, isMock, isStale } = getPriceData(item);
                   const hasPrice = price && price > 0;
                   
                   return (
@@ -244,9 +284,25 @@ const Watchlist: React.FC<WatchlistProps> = ({ darkMode, onBack, onSelectMoreSto
                         <div className="mt-2">
                           {hasPrice ? (
                             <>
-                              <span className="text-lg font-semibold text-gray-900 dark:text-white">{formatPrice(price)}</span>
+                              <span className="text-lg font-semibold text-gray-900 dark:text-white">
+                                {formatPrice(price, isMock)}
+                              </span>
                               {changePercent !== undefined && changePercent !== null && (
                                 <span className="ml-2">{formatChange(changePercent)}</span>
+                              )}
+                              {(isMock || isStale) && (
+                                <div className="flex items-center mt-1">
+                                  {isMock && (
+                                    <span className="text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded mr-2">
+                                      Demo Data ⚡
+                                    </span>
+                                  )}
+                                  {isStale && !isMock && (
+                                    <span className="text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-2 py-1 rounded">
+                                      Cached
+                                    </span>
+                                  )}
+                                </div>
                               )}
                             </>
                           ) : (

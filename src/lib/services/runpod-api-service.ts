@@ -32,16 +32,94 @@ export interface RunPodApiConfig {
   retries: number;
 }
 
+// Circuit Breaker State
+enum CircuitBreakerState {
+  CLOSED = 'CLOSED',
+  OPEN = 'OPEN',
+  HALF_OPEN = 'HALF_OPEN'
+}
+
+class CircuitBreaker {
+  private failureCount = 0;
+  private lastFailureTime = 0;
+  private state = CircuitBreakerState.CLOSED;
+  
+  constructor(
+    private threshold: number = 3,
+    private resetTime: number = 30000 // 30 seconds
+  ) {}
+
+  async call<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === CircuitBreakerState.OPEN) {
+      if (Date.now() - this.lastFailureTime > this.resetTime) {
+        this.state = CircuitBreakerState.HALF_OPEN;
+        console.log('🔄 [RUNPOD-CIRCUIT-BREAKER] Moving to HALF_OPEN state');
+      } else {
+        throw new Error('RunPod API circuit breaker is OPEN - failing fast');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess() {
+    this.failureCount = 0;
+    this.state = CircuitBreakerState.CLOSED;
+  }
+
+  private onFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    
+    if (this.failureCount >= this.threshold) {
+      this.state = CircuitBreakerState.OPEN;
+      console.log(`🔴 [RUNPOD-CIRCUIT-BREAKER] Moving to OPEN state after ${this.failureCount} failures`);
+    }
+  }
+
+  getState() {
+    return this.state;
+  }
+}
+
+// Mock data for Indian stocks when RunPod API is down
+const MOCK_RUNPOD_DATA: Record<string, Pick<RunPodStockData, 'symbol' | 'name' | 'type' | 'sector' | 'industry'>> = {
+  'RELIANCE': {
+    symbol: 'RELIANCE',
+    name: 'Reliance Industries Ltd',
+    type: 'stock',
+    sector: 'Energy',
+    industry: 'Oil & Gas'
+  },
+  'TCS': {
+    symbol: 'TCS',
+    name: 'Tata Consultancy Services',
+    type: 'stock',
+    sector: 'Technology',
+    industry: 'IT Services'
+  },
+  // Add more stocks as needed...
+};
+
 export class RunPodApiService {
   private config: RunPodApiConfig;
+  private circuitBreaker: CircuitBreaker;
 
   constructor(config?: Partial<RunPodApiConfig>) {
     this.config = {
       baseUrl: '', // Use relative URLs to proxy through our API
-      timeout: 10000, // Increased timeout to 10 seconds
-      retries: 2,
+      timeout: 3000, // Reduced from 10000 to 3000
+      retries: 1,    // Reduced from 2 to 1
       ...config
     };
+    this.circuitBreaker = new CircuitBreaker(this.config.retries, this.config.timeout * 2); // Adjust threshold and reset time
   }
 
   /**
@@ -52,71 +130,78 @@ export class RunPodApiService {
     console.log(`🔍 [RUNPOD-API] Starting search for query: "${query}"`);
     
     try {
-      const url = `/api/external-stocks/search?query=${encodeURIComponent(query)}`;
-      console.log(`🌐 [RUNPOD-API] Making search API call to: ${url}`);
-      
-      const apiStartTime = performance.now();
-      const response = await this.fetchWithRetry(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
+      const result = await this.circuitBreaker.call(async () => {
+        const url = `/api/external-stocks/search?query=${encodeURIComponent(query)}`;
+        console.log(`🌐 [RUNPOD-API] Making search API call to: ${url}`);
+        
+        const apiStartTime = performance.now();
+        const response = await this.fetchWithRetry(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        });
+
+        const apiEndTime = performance.now();
+        console.log(`⏱️ [RUNPOD-API] Search API call completed in ${(apiEndTime - apiStartTime).toFixed(2)}ms`);
+
+        const parseStartTime = performance.now();
+        const data = await response.json();
+        const parseEndTime = performance.now();
+        console.log(`📊 [RUNPOD-API] Search JSON parsing completed in ${(parseEndTime - parseStartTime).toFixed(2)}ms`);
+        
+        // Parse search results - API returns array directly
+        if (Array.isArray(data)) {
+          const results = data.map((item: any) => ({
+            symbol: item.symbol || '',
+            name: item.name || '',
+            last_price: 0, // Will be fetched separately
+            change: 0,
+            change_percent: 0,
+            volume: 0,
+            open: 0,
+            high: 0,
+            low: 0,
+            close: 0,
+            timestamp: new Date().toISOString(),
+            type: this.determineType(item.symbol, item.name),
+            sector: item.industry || 'Unknown',
+            industry: item.industry || 'Unknown'
+          }));
+          
+          const endTime = performance.now();
+          console.log(`✅ [RUNPOD-API] Search completed in ${(endTime - startTime).toFixed(2)}ms - Found ${results.length} results`);
+          return results;
         }
+
+        const endTime = performance.now();
+        console.log(`⚠️ [RUNPOD-API] Search completed in ${(endTime - startTime).toFixed(2)}ms - No results (data not array)`);
+        return [];
       });
 
-      const apiEndTime = performance.now();
-      console.log(`⏱️ [RUNPOD-API] Search API call completed in ${(apiEndTime - apiStartTime).toFixed(2)}ms`);
-
-      const parseStartTime = performance.now();
-      const data = await response.json();
-      const parseEndTime = performance.now();
-      console.log(`📊 [RUNPOD-API] Search JSON parsing completed in ${(parseEndTime - parseStartTime).toFixed(2)}ms`);
-      
-      // Parse search results - API returns array directly
-      if (Array.isArray(data)) {
-        const results = data.map((item: any) => ({
-          symbol: item.symbol || '',
-          name: item.name || '',
-          last_price: 0, // Will be fetched separately
-          change: 0,
-          change_percent: 0,
-          volume: 0,
-          open: 0,
-          high: 0,
-          low: 0,
-          close: 0,
-          timestamp: new Date().toISOString(),
-          type: this.determineType(item.symbol, item.name),
-          sector: item.industry || 'Unknown',
-          industry: item.industry || 'Unknown'
-        }));
-        
-        const endTime = performance.now();
-        console.log(`✅ [RUNPOD-API] Search completed in ${(endTime - startTime).toFixed(2)}ms - Found ${results.length} results`);
-        return results;
-      }
-
-      const endTime = performance.now();
-      console.log(`⚠️ [RUNPOD-API] Search completed in ${(endTime - startTime).toFixed(2)}ms - No results (data not array)`);
-      return [];
+      return result;
     } catch (error) {
-      const endTime = performance.now();
-      console.error(`❌ [RUNPOD-API] Search failed after ${(endTime - startTime).toFixed(2)}ms:`, error);
+      console.warn(`⚠️ [RUNPOD-API] Search failed, using mock data:`, error);
       
-      // Provide more specific error messages
-      let errorMessage = 'Unknown error';
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMessage = 'Request timed out or was cancelled';
-        } else if (error.message.includes('timeout')) {
-          errorMessage = 'Request timed out';
-        } else if (error.message.includes('fetch')) {
-          errorMessage = 'Network error occurred';
-        } else {
-          errorMessage = error.message;
-        }
-      }
+      // Return mock search results
+      const mockResults = Object.values(MOCK_RUNPOD_DATA)
+        .filter(item => 
+          item.symbol.toLowerCase().includes(query.toLowerCase()) ||
+          item.name.toLowerCase().includes(query.toLowerCase())
+        );
       
-      throw new Error(`Failed to search: ${errorMessage}`);
+      return mockResults.map(item => ({
+        ...item,
+        last_price: 0,
+        change: 0,
+        change_percent: 0,
+        volume: 0,
+        open: 0,
+        high: 0,
+        low: 0,
+        close: 0,
+        timestamp: new Date().toISOString()
+      }));
     }
   }
 
@@ -166,15 +251,15 @@ export class RunPodApiService {
         change: data.day_change || 0,
         change_percent: data.day_change_perc || 0,
         volume: data.volume || 0,
-        market_cap: data.market_cap || null,
+        market_cap: data.market_cap || 0,
         open: data.ohlc?.open || 0,
         high: data.ohlc?.high || 0,
         low: data.ohlc?.low || 0,
         close: data.ohlc?.close || 0,
-        upper_circuit_limit: data.upper_circuit_limit || null,
-        lower_circuit_limit: data.lower_circuit_limit || null,
-        week_52_high: data.week_52_high || null,
-        week_52_low: data.week_52_low || null,
+        upper_circuit_limit: data.upper_circuit_limit || undefined,
+        lower_circuit_limit: data.lower_circuit_limit || undefined,
+        week_52_high: data.week_52_high || undefined,
+        week_52_low: data.week_52_low || undefined,
         timestamp: new Date().toISOString(),
         type: this.determineType(symbol, ''),
         sector: 'Unknown',
@@ -328,7 +413,7 @@ export class RunPodApiService {
             name: searchItem.name || priceItem.name,
             sector: searchItem.sector || priceItem.sector,
             industry: searchItem.industry || priceItem.industry
-          };
+          } as RunPodStockData;
         }
         return searchItem;
       });
@@ -365,7 +450,7 @@ export class RunPodApiService {
    */
   private async fetchWithRetry(url: string, options: RequestInit, retryCount = 0): Promise<Response> {
     const controller = new AbortController();
-    let timeoutId: NodeJS.Timeout | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     
     try {
       // Set up timeout
@@ -499,7 +584,7 @@ export class RunPodApiService {
 
 // Export singleton instance
 export const runPodApiService = new RunPodApiService({
-  timeout: 10000, // Increased timeout to 10 seconds
-  retries: 2
+  timeout: 3000, // Reduced from 10000 to 3000
+  retries: 1
 });
 

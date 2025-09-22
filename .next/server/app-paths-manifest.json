@@ -1,4 +1,9 @@
 {
-  "/dashboard/page": "app/dashboard/page.js",
-  "/stocks/page": "app/stocks/page.js"
+  "/api/watchlist/route": "app/api/watchlist/route.js",
+  "/api/external-stocks/price/[symbol]/route": "app/api/external-stocks/price/[symbol]/route.js",
+  "/api/stock/[symbol]/price/route": "app/api/stock/[symbol]/price/route.js",
+  "/page": "app/page.js",
+  "/stocks/page": "app/stocks/page.js",
+  "/watchlist/page": "app/watchlist/page.js",
+  "/dashboard/page": "app/dashboard/page.js"
 }
