@@ -4,7 +4,7 @@ import React, { useState, useCallback, useRef } from 'react';
 import { Upload, FileText, Image, X, CheckCircle, AlertCircle, Loader2, TrendingUp, AlertTriangle, Target, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { useSupabase } from '@/components/providers/SupabaseProvider';
+import { useAuthStore } from '@/lib/store/auth-store';
 
 interface UploadedFile {
   file: File;
@@ -35,32 +35,23 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [banner, setBanner] = useState<{ type: 'info' | 'warning' | 'error'; message: string } | null>(null);
 
-  // Debug files changes
   React.useEffect(() => {
     console.log('Files state changed:', files.map(f => ({ id: f.id, status: f.status, hasResult: !!f.result })));
   }, [files]);
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { user, supabase } = useSupabase();
+  const { user } = useAuthStore();  // ← direct store access, no provider needed
 
-  const acceptedFileTypes = {
-    'application/pdf': ['.pdf'],
-    'image/jpeg': ['.jpg', '.jpeg'],
-    'image/png': ['.png']
-  };
-
-  const maxFileSize = 50 * 1024 * 1024; // 50MB
+  const maxFileSize = 50 * 1024 * 1024;
 
   const validateFile = (file: File): string | null => {
     if (file.size > maxFileSize) {
       return `File size too large. Maximum size is ${Math.round(maxFileSize / (1024 * 1024))}MB`;
     }
-
-    const fileType = file.type;
-    if (!Object.keys(acceptedFileTypes).includes(fileType)) {
+    const acceptedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!acceptedTypes.includes(file.type)) {
       return 'Invalid file type. Only PDF and image files are allowed.';
     }
-
     return null;
   };
 
@@ -74,15 +65,12 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
         onUploadError?.(error);
         return;
       }
-
-      const uploadedFile: UploadedFile = {
+      validFiles.push({
         file,
         id: Math.random().toString(36).substr(2, 9),
         status: 'pending',
-        progress: 0
-      };
-
-      validFiles.push(uploadedFile);
+        progress: 0,
+      });
     });
 
     setFiles(prev => [...prev, ...validFiles]);
@@ -94,141 +82,108 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
 
   const uploadFile = async (uploadedFile: UploadedFile) => {
     try {
-      // Update status to uploading
-      setFiles(prev => prev.map(f => 
-        f.id === uploadedFile.id 
-          ? { ...f, status: 'uploading', progress: 10 }
-          : f
+      setFiles(prev => prev.map(f =>
+        f.id === uploadedFile.id ? { ...f, status: 'uploading', progress: 10 } : f
       ));
+
+      if (!user?.user_id) {
+        throw new Error('Authentication required. Please sign in first.');
+      }
 
       const formData = new FormData();
       formData.append('file', uploadedFile.file);
 
-      // Get auth token
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        throw new Error('Authentication required');
-      }
-
       const response = await fetch('/api/ocr/upload', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`
+          'Authorization': `Bearer ${user.user_id}`,
+          'X-User-Id': user.user_id,
         },
-        body: formData
+        body: formData,
       });
 
       console.log('📡 [OCR-UPLOAD] Response received:', {
         status: response.status,
         statusText: response.statusText,
-        contentType: response.headers.get('content-type')
+        contentType: response.headers.get('content-type'),
       });
 
-      // Check if response is ok before parsing
       if (!response.ok) {
         let errorMessage = `Upload failed with status ${response.status}`;
         try {
           const errorData = await response.json();
-          const details = errorData.details ? ` ${errorData.details}` : '';
           errorMessage = errorData.error || errorData.message || errorMessage;
-          errorMessage += details;
-        } catch (jsonError) {
-          const errorText = await response.text();
-          errorMessage = errorText || errorMessage;
+          if (errorData.details) errorMessage += ` ${errorData.details}`;
+        } catch {
+          errorMessage = (await response.text()) || errorMessage;
         }
 
-        // Gracefully handle errors (e.g., monthly quota) without throwing
-        setFiles(prev => prev.map(f => 
-          f.id === uploadedFile.id 
-            ? { ...f, status: 'failed', error: errorMessage, progress: 0 }
-            : f
+        setFiles(prev => prev.map(f =>
+          f.id === uploadedFile.id ? { ...f, status: 'failed', error: errorMessage, progress: 0 } : f
         ));
-        // Show inline banner with upgrade CTA if quota reached
+
         const isQuota = errorMessage.toLowerCase().includes('quota');
         setBanner({
           type: isQuota ? 'warning' : 'error',
           message: isQuota
             ? `${errorMessage} Visit pricing to upgrade your plan and increase your monthly limit.`
-            : errorMessage
+            : errorMessage,
         });
         onUploadError?.(errorMessage);
-        return; // Stop processing this file
+        return;
       }
 
-      // Parse JSON with better error handling
       let result;
       try {
         const responseText = await response.text();
-        console.log('📄 [OCR-UPLOAD] Raw response text length:', responseText.length);
-        
-        if (!responseText.trim()) {
-          throw new Error('Empty response received from upload API');
-        }
-        
+        if (!responseText.trim()) throw new Error('Empty response received from upload API');
         result = JSON.parse(responseText);
-        console.log('✅ [OCR-UPLOAD] Successfully parsed JSON response');
       } catch (jsonError) {
-        console.error('❌ [OCR-UPLOAD] JSON parsing error:', jsonError);
-        const responseText = await response.text();
-        console.error('❌ [OCR-UPLOAD] Raw response that failed to parse:', responseText);
         throw new Error(`Failed to parse response: ${jsonError instanceof Error ? jsonError.message : 'Unknown JSON error'}`);
       }
 
-      // Update status based on result
-      setFiles(prev => {
-        console.log('Looking for file with ID:', uploadedFile.id);
-        console.log('Current files:', prev.map(f => ({ id: f.id, status: f.status })));
-        const updated: UploadedFile[] = prev.map(f => {
-          if (f.id === uploadedFile.id) {
-            console.log('Found matching file, updating...');
-            return { 
-              ...f, 
-              status: (result.status === 'completed' ? 'completed' : 'processing') as UploadedFile['status'],
+      const fileStatus: UploadedFile['status'] =
+        result.status === 'completed'
+          ? 'completed'
+          : result.status === 'failed'
+          ? 'failed'
+          : result.success
+          ? 'completed'
+          : 'processing';
+
+      setFiles(prev => prev.map(f =>
+        f.id === uploadedFile.id
+          ? {
+              ...f,
+              status: fileStatus,
               progress: 100,
               analysisId: result.analysis_id,
               documentId: result.document_id,
-              result: result.analysis
-            };
-          }
-          return f;
-        });
-        console.log('Files after update:', updated);
-        return updated;
-      });
-
-      if (result.status === 'completed') {
-        console.log('Analysis completed, result:', result);
-        console.log('Setting file result to:', result.analysis);
-        console.log('File before update:', uploadedFile);
-        onUploadComplete?.(result);
-      }
-
-    } catch (error) {
-      console.error('Upload error:', error);
-      
-      setFiles(prev => prev.map(f => 
-        f.id === uploadedFile.id 
-          ? { 
-              ...f, 
-              status: 'failed', 
-              error: error instanceof Error ? error.message : 'Upload failed',
-              progress: 0
+              result: result.analysis,
+              error: result.error || undefined,
             }
           : f
       ));
 
+      if (result.status === 'completed') {
+        onUploadComplete?.(result);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      setFiles(prev => prev.map(f =>
+        f.id === uploadedFile.id
+          ? { ...f, status: 'failed', error: error instanceof Error ? error.message : 'Upload failed', progress: 0 }
+          : f
+      ));
       onUploadError?.(error instanceof Error ? error.message : 'Upload failed');
     }
   };
 
   const handleUpload = async () => {
     if (files.length === 0) return;
-
     setIsUploading(true);
     onUploadStart?.();
-
     try {
-      // Upload files sequentially to avoid overwhelming the server
       for (const file of files.filter(f => f.status === 'pending')) {
         await uploadFile(file);
       }
@@ -237,49 +192,30 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
     }
   };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(false);
-  }, []);
-
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(true); }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragOver(false); }, []);
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    
-    const droppedFiles = e.dataTransfer.files;
-    addFiles(droppedFiles);
+    addFiles(e.dataTransfer.files);
   }, [addFiles]);
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files;
-    if (selectedFiles) {
-      addFiles(selectedFiles);
-    }
+    if (e.target.files) addFiles(e.target.files);
   }, [addFiles]);
 
-  const getFileIcon = (file: File) => {
-    if (file.type === 'application/pdf') {
-      return <FileText className="w-8 h-8 text-red-500" />;
-    }
-    return <Image className="w-8 h-8 text-blue-500" />;
-  };
+  const getFileIcon = (file: File) =>
+    file.type === 'application/pdf'
+      ? <FileText className="w-8 h-8 text-red-500" />
+      : <Image className="w-8 h-8 text-blue-500" />;
 
   const getStatusIcon = (status: UploadedFile['status']) => {
     switch (status) {
-      case 'completed':
-        return <CheckCircle className="w-5 h-5 text-green-500" />;
-      case 'failed':
-        return <AlertCircle className="w-5 h-5 text-red-500" />;
+      case 'completed': return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'failed': return <AlertCircle className="w-5 h-5 text-red-500" />;
       case 'uploading':
-      case 'processing':
-        return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
-      default:
-        return null;
+      case 'processing': return <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />;
+      default: return null;
     }
   };
 
@@ -342,15 +278,9 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
           Supports PDF, JPEG, and PNG files up to 50MB
         </p>
-        
-        <Button
-          onClick={() => fileInputRef.current?.click()}
-          variant="outline"
-          className="mb-4"
-        >
+        <Button onClick={() => fileInputRef.current?.click()} variant="outline" className="mb-4">
           Choose Files
         </Button>
-        
         <input
           ref={fileInputRef}
           type="file"
@@ -361,55 +291,34 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
         />
       </div>
 
-
       {/* File List */}
       {files.length > 0 && (
         <div className="mt-6">
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
             Uploaded Files ({files.length})
           </h3>
-          
           <div className="space-y-3">
             {files.map((file) => (
-              <div
-                key={file.id}
-                className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
-              >
+              <div key={file.id} className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                 <div className="flex items-center space-x-3">
                   {getFileIcon(file.file)}
                   <div>
-                    <p className="font-medium text-gray-900 dark:text-white">
-                      {file.file.name}
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {formatFileSize(file.file.size)}
-                    </p>
+                    <p className="font-medium text-gray-900 dark:text-white">{file.file.name}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">{formatFileSize(file.file.size)}</p>
                   </div>
                 </div>
-                
                 <div className="flex items-center space-x-3">
-                  {file.status === 'uploading' || file.status === 'processing' ? (
+                  {(file.status === 'uploading' || file.status === 'processing') && (
                     <div className="flex items-center space-x-2">
                       <div className="w-16 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div
-                          className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${file.progress}%` }}
-                        />
+                        <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${file.progress}%` }} />
                       </div>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {file.progress}%
-                      </span>
+                      <span className="text-sm text-gray-500 dark:text-gray-400">{file.progress}%</span>
                     </div>
-                  ) : null}
-                  
+                  )}
                   {getStatusIcon(file.status)}
-                  
                   {file.status === 'pending' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => removeFile(file.id)}
-                    >
+                    <Button size="sm" variant="outline" onClick={() => removeFile(file.id)}>
                       <X className="w-4 h-4" />
                     </Button>
                   )}
@@ -429,173 +338,131 @@ const OCRDocumentUpload: React.FC<OCRDocumentUploadProps> = ({
             className="px-8 py-3"
           >
             {isUploading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              'Start Analysis'
-            )}
+              <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Processing...</>
+            ) : 'Start Analysis'}
           </Button>
         </div>
       )}
 
       {/* Analysis Results */}
-      {(() => {
-        const completedFiles = files.filter(f => f.status === 'completed' && f.result);
-        console.log('Checking for completed files with results:', completedFiles);
-        return completedFiles.length > 0;
-      })() && (
+      {files.filter(f => f.status === 'completed' && f.result).length > 0 && (
         <div className="mt-8 space-y-6">
-          {files
-            .filter(f => f.status === 'completed' && f.result)
-            .map((file) => (
-              <div key={file.id} className="space-y-6">
-                {/* Analysis Header */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
-                      <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Analysis Complete
-                      </h3>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        {file.file.name} • {new Date().toLocaleString()}
-                      </p>
-                    </div>
+          {files.filter(f => f.status === 'completed' && f.result).map((file) => (
+            <div key={file.id} className="space-y-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-lg flex items-center justify-center">
+                    <CheckCircle className="w-6 h-6 text-green-600 dark:text-green-400" />
                   </div>
-                  <button
-                    onClick={() => removeFile(file.id)}
-                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Analysis Complete</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">{file.file.name} • {new Date().toLocaleString()}</p>
+                  </div>
                 </div>
+                <button onClick={() => removeFile(file.id)} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
 
-                {/* Summary */}
-                {file.result?.summary && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
-                      <FileText className="w-5 h-5 mr-2" />
-                      Summary
-                    </h4>
-                    <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                      {file.result.summary}
-                    </p>
+              {file.result?.summary && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-3 flex items-center">
+                    <FileText className="w-5 h-5 mr-2" />Summary
+                  </h4>
+                  <p className="text-gray-700 dark:text-gray-300 leading-relaxed">{file.result.summary}</p>
+                </div>
+              )}
+
+              {file.result?.insights?.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <TrendingUp className="w-5 h-5 mr-2" />Key Insights
+                  </h4>
+                  <div className="space-y-3">
+                    {file.result.insights.map((insight: string, index: number) => (
+                      <div key={index} className="flex items-start space-x-3">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0" />
+                        <p className="text-gray-700 dark:text-gray-300">{insight}</p>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Key Insights */}
-                {file.result?.insights && file.result.insights.length > 0 && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                      <TrendingUp className="w-5 h-5 mr-2" />
-                      Key Insights
-                    </h4>
-                    <div className="space-y-3">
-                      {file.result.insights.map((insight: string, index: number) => (
-                        <div key={index} className="flex items-start space-x-3">
-                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                          <p className="text-gray-700 dark:text-gray-300">{insight}</p>
-                        </div>
-                      ))}
-                    </div>
+              {file.result?.recommendations?.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <Target className="w-5 h-5 mr-2" />Recommendations
+                  </h4>
+                  <div className="space-y-3">
+                    {file.result.recommendations.map((rec: string, index: number) => (
+                      <div key={index} className="flex items-start space-x-3">
+                        <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0" />
+                        <p className="text-gray-700 dark:text-gray-300">{rec}</p>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Recommendations */}
-                {file.result?.recommendations && file.result.recommendations.length > 0 && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                      <Target className="w-5 h-5 mr-2" />
-                      Recommendations
-                    </h4>
-                    <div className="space-y-3">
-                      {file.result.recommendations.map((recommendation: string, index: number) => (
-                        <div key={index} className="flex items-start space-x-3">
-                          <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
-                          <p className="text-gray-700 dark:text-gray-300">{recommendation}</p>
-                        </div>
-                      ))}
-                    </div>
+              {file.result?.risk_factors?.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <AlertTriangle className="w-5 h-5 mr-2" />Risk Factors
+                  </h4>
+                  <div className="space-y-3">
+                    {file.result.risk_factors.map((risk: string, index: number) => (
+                      <div key={index} className="flex items-start space-x-3">
+                        <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0" />
+                        <p className="text-gray-700 dark:text-gray-300">{risk}</p>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {/* Risk Factors */}
-                {file.result?.risk_factors && file.result.risk_factors.length > 0 && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                      <AlertTriangle className="w-5 h-5 mr-2" />
-                      Risk Factors
-                    </h4>
-                    <div className="space-y-3">
-                      {file.result.risk_factors.map((risk: string, index: number) => (
-                        <div key={index} className="flex items-start space-x-3">
-                          <div className="w-2 h-2 bg-red-500 rounded-full mt-2 flex-shrink-0"></div>
-                          <p className="text-gray-700 dark:text-gray-300">{risk}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Sectors Affected */}
-                {file.result?.sectors_affected && file.result.sectors_affected.length > 0 && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
-                      <BarChart3 className="w-5 h-5 mr-2" />
-                      Sectors Affected
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {file.result.sectors_affected.map((sector: string, index: number) => (
-                        <span
-                          key={index}
-                          className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full text-sm font-medium"
-                        >
-                          {sector}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Analysis Metadata */}
-                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="text-gray-600 dark:text-gray-400">Document Type:</span>
-                      <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                        {file.result?.document_type?.toUpperCase() || 'UNKNOWN'}
+              {file.result?.sectors_affected?.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center">
+                    <BarChart3 className="w-5 h-5 mr-2" />Sectors Affected
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {file.result.sectors_affected.map((sector: string, index: number) => (
+                      <span key={index} className="px-3 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 rounded-full text-sm font-medium">
+                        {sector}
                       </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600 dark:text-gray-400">Company:</span>
-                      <span className="ml-2 font-medium text-gray-900 dark:text-white">
-                        {file.result?.company_name || 'Unknown'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600 dark:text-gray-400">Sentiment:</span>
-                      <span className={`ml-2 font-medium ${
-                        file.result?.sentiment === 'positive' ? 'text-green-600' :
-                        file.result?.sentiment === 'negative' ? 'text-red-600' :
-                        'text-yellow-600'
-                      }`}>
-                        {file.result?.sentiment?.charAt(0)?.toUpperCase() + file.result?.sentiment?.slice(1) || 'Neutral'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-gray-600 dark:text-gray-400">Analysis ID:</span>
-                      <span className="ml-2 font-medium text-gray-900 dark:text-white font-mono text-xs">
-                        {file.analysisId}
-                      </span>
-                    </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Document Type:</span>
+                    <span className="ml-2 font-medium text-gray-900 dark:text-white">{file.result?.document_type?.toUpperCase() || 'UNKNOWN'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Company:</span>
+                    <span className="ml-2 font-medium text-gray-900 dark:text-white">{file.result?.company_name || 'Unknown'}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Sentiment:</span>
+                    <span className={`ml-2 font-medium ${
+                      file.result?.sentiment === 'positive' ? 'text-green-600' :
+                      file.result?.sentiment === 'negative' ? 'text-red-600' : 'text-yellow-600'
+                    }`}>
+                      {file.result?.sentiment?.charAt(0)?.toUpperCase() + file.result?.sentiment?.slice(1) || 'Neutral'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600 dark:text-gray-400">Analysis ID:</span>
+                    <span className="ml-2 font-medium text-gray-900 dark:text-white font-mono text-xs">{file.analysisId}</span>
                   </div>
                 </div>
               </div>
-            ))}
+            </div>
+          ))}
         </div>
       )}
     </div>

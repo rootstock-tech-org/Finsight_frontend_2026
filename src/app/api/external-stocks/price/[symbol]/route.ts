@@ -35,6 +35,10 @@ export async function GET(
           const data = await response.json();
           return NextResponse.json(data);
         }
+        if (response.status === 404) {
+          // Symbol not found in external provider; do not treat this as internal or timeout error.
+          return NextResponse.json({ error: 'Symbol not found' }, { status: 404 });
+        }
         lastErr = new Error(`External API error: ${response.status}`);
       } catch (e) {
         lastErr = e;

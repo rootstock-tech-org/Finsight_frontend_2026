@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createServerClient();
-
-    // Test basic connection
-    const { data, error } = await supabase.auth.getSession();
+    return NextResponse.json({
+      success: false,
+      message: 'Supabase removed; this endpoint is deprecated. Use FastAPI endpoints instead.'
+    }, { status: 501 });
 
     if (error) {
       console.error('Supabase connection error:', error);

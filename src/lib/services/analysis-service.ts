@@ -1,4 +1,24 @@
+/**
+ * analysis-service.ts
+ *
+ * Analysis results now persisted to FastAPI /analysis_results/.
+ * localStorage is kept as a fast local cache only (not source of truth).
+ *
+ * Backend endpoints used:
+ *   POST /analysis_results/                    → create
+ *   GET  /analysis_results/?user_id=           → list history
+ *   GET  /analysis_results/{id}                → single result
+ *   GET  /analysis_results/{user_id}/stats     → stats
+ *   GET  /analysis_results/{user_id}/search?q= → search
+ *   DELETE /analysis_results/{id}?user_id=     → delete
+ */
+
 import { useAuthStore } from '@/lib/store/auth-store';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+const LOCAL_CACHE_KEY = 'analysis_history_cache';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface AnalysisResult {
   id: string;
@@ -22,292 +42,335 @@ export interface AnalysisSession {
   result: AnalysisResult;
 }
 
+// Backend doc_type enum values
+const DOC_TYPE_MAP: Record<string, string> = {
+  pdf: 'AR',
+  image: 'CHART',
+  url: 'IR',
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(`${BACKEND_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+    },
+  });
+}
+
+function getCurrentUserId(): string | null {
+  return useAuthStore.getState().user?.user_id || null;
+}
+
+function generateTitle(result: AnalysisResult): string {
+  const date = new Date().toLocaleDateString();
+  const docName = result.document_name.split('.')[0].substring(0, 20);
+  return `${docName} - ${date}`;
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+
 class AnalysisService {
-  private baseURL = '/api'; // Use local API routes
-  
-  // Mock analysis for development
+  private baseURL = '/api';
+
+  // ── Mock fallback ─────────────────────────────────────────────────────────
+
   private async mockAnalysis(file: File | string): Promise<AnalysisResult> {
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    const mockInsights = [
-      "Q3 revenue grew by 15% year-over-year, indicating strong business momentum",
-      "EBITDA margins improved to 18.5%, showing operational efficiency gains",
-      "Debt-to-equity ratio decreased to 0.65, reflecting better financial health",
-      "Management guidance suggests 20% growth target for next fiscal year",
-      "Market share in key segments expanded from 12% to 15%",
-      "Cash flow from operations increased by 22%, providing strong liquidity position"
-    ];
-
-    const mockRecommendations = [
-      "Consider accumulating on dips given strong fundamentals",
-      "Monitor quarterly results for sustained growth trajectory",
-      "Watch for sector headwinds that might impact performance",
-      "Suitable for long-term wealth creation portfolios"
-    ];
-
-    const mockRiskFactors = [
-      "Regulatory changes in the sector could impact margins",
-      "Rising input costs may pressure profitability",
-      "Intense competition from new market entrants",
-      "Dependency on key customer segments poses concentration risk"
-    ];
-
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     const filename = typeof file === 'string' ? 'URL Analysis' : file.name;
-    
+
     return {
-      id: Math.random().toString(36).substr(2, 9),
-      summary: "The financial document shows strong performance indicators with revenue growth outpacing industry averages. The company demonstrates robust operational efficiency and improving market position, making it an attractive investment opportunity for long-term investors.",
-      insights: mockInsights,
-      sectors_affected: ["Banking", "Technology", "Healthcare", "Consumer Goods"],
-      recommendations: mockRecommendations,
-      risk_factors: mockRiskFactors,
-      sentiment: Math.random() > 0.5 ? 'positive' : 'neutral',
-      confidence_score: 0.85 + Math.random() * 0.1,
+      id: crypto.randomUUID(),
+      summary:
+        'Strong performance indicators with revenue growth outpacing industry averages. Robust operational efficiency and improving market position.',
+      insights: [
+        'Q3 revenue grew 15% YoY indicating strong business momentum',
+        'EBITDA margins improved to 18.5% showing operational efficiency gains',
+        'Debt-to-equity ratio decreased to 0.65 reflecting better financial health',
+        'Management guidance suggests 20% growth target for next fiscal year',
+      ],
+      sectors_affected: ['Banking', 'Technology', 'Healthcare', 'Consumer Goods'],
+      recommendations: [
+        'Consider accumulating on dips given strong fundamentals',
+        'Monitor quarterly results for sustained growth trajectory',
+        'Watch for sector headwinds that might impact performance',
+      ],
+      risk_factors: [
+        'Regulatory changes in the sector could impact margins',
+        'Rising input costs may pressure profitability',
+        'Intense competition from new market entrants',
+      ],
+      sentiment: 'positive',
+      confidence_score: 0.87,
       timestamp: new Date(),
-      document_type: typeof file === 'string' ? 'url' : (file.type.includes('pdf') ? 'pdf' : 'image'),
-      document_name: filename
+      document_type:
+        typeof file === 'string' ? 'url' : file.type.includes('pdf') ? 'pdf' : 'image',
+      document_name: filename,
     };
   }
+
+  // ── Analyze document ──────────────────────────────────────────────────────
 
   async analyzeDocument(file: File): Promise<AnalysisResult> {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      
-      console.log('Sending file to API:', file.name, file.type);
-      
-      console.log('Sending file to local API proxy');
-      
+
       const response = await fetch(`${this.baseURL}/analyze`, {
         method: 'POST',
         body: formData,
       });
 
-      console.log('API Response status:', response.status);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error:', errorText);
-        
-        if (response.status === 503) {
-          throw new Error('Backend service is currently unavailable. Please try again later.');
-        } else if (response.status === 400) {
-          throw new Error('Invalid request. Please check your file or URL and try again.');
-        } else {
-          throw new Error(`Analysis failed: ${response.statusText} - ${errorText}`);
-        }
+        if (response.status === 503) throw new Error('Backend service unavailable. Try again later.');
+        if (response.status === 400) throw new Error('Invalid file. Please check and retry.');
+        throw new Error(`Analysis failed: ${response.statusText}`);
       }
 
       const result = await response.json();
-      console.log('API Response:', result);
-      
-      // Transform the API response to match our interface
-      return {
-        id: result.id || Math.random().toString(36).substr(2, 9),
-        summary: result.summary || result.analysis || 'Analysis completed',
-        insights: result.insights || result.key_points || [],
-        sectors_affected: result.sectors_affected || result.sectors || [],
-        recommendations: result.recommendations || result.suggestions || [],
-        risk_factors: result.risk_factors || result.risks || [],
-        sentiment: result.sentiment || 'neutral',
-        confidence_score: result.confidence_score || result.confidence || 0.8,
-        timestamp: new Date(),
-        document_type: file.type.includes('pdf') ? 'pdf' : 'image',
-        document_name: file.name
-      };
+      return this._mapApiResponse(result, file.type.includes('pdf') ? 'pdf' : 'image', file.name);
     } catch (error) {
-      console.error('Document analysis error:', error);
-      
-      // Check if it's a network error
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        console.error('Network error - API might be down or CORS issue');
-        throw new Error('Unable to connect to analysis service. Please check your internet connection.');
+        throw new Error('Unable to connect to analysis service.');
       }
-      
-      // Fallback to mock analysis if API fails
       console.log('Falling back to mock analysis');
-      return await this.mockAnalysis(file);
+      return this.mockAnalysis(file);
     }
   }
+
+  // ── Analyze URL ───────────────────────────────────────────────────────────
 
   async analyzeURL(url: string): Promise<AnalysisResult> {
     try {
-      console.log('Sending URL to API:', url);
-      
-      console.log('Sending URL to local API proxy');
-      
       const response = await fetch(`${this.baseURL}/analyze-url`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
 
-      console.log('API Response status:', response.status);
-      
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error:', errorText);
-        
-        if (response.status === 503) {
-          throw new Error('Backend service is currently unavailable. Please try again later.');
-        } else if (response.status === 400) {
-          throw new Error('Invalid URL. Please check the URL and try again.');
-        } else {
-          throw new Error(`URL analysis failed: ${response.statusText} - ${errorText}`);
-        }
+        if (response.status === 503) throw new Error('Backend service unavailable.');
+        if (response.status === 400) throw new Error('Invalid URL. Please check and retry.');
+        throw new Error(`URL analysis failed: ${response.statusText}`);
       }
 
       const result = await response.json();
-      console.log('API Response:', result);
-      
-      // Transform the API response to match our interface
-      return {
-        id: result.id || Math.random().toString(36).substr(2, 9),
-        summary: result.summary || result.analysis || 'URL analysis completed',
-        insights: result.insights || result.key_points || [],
-        sectors_affected: result.sectors_affected || result.sectors || [],
-        recommendations: result.recommendations || result.suggestions || [],
-        risk_factors: result.risk_factors || result.risks || [],
-        sentiment: result.sentiment || 'neutral',
-        confidence_score: result.confidence_score || result.confidence || 0.8,
-        timestamp: new Date(),
-        document_type: 'url',
-        document_name: 'URL Analysis'
-      };
+      return this._mapApiResponse(result, 'url', 'URL Analysis');
     } catch (error) {
-      console.error('URL analysis error:', error);
-      
-      // Check if it's a network error
       if (error instanceof TypeError && error.message.includes('fetch')) {
-        console.error('Network error - API might be down or CORS issue');
-        throw new Error('Unable to connect to analysis service. Please check your internet connection.');
+        throw new Error('Unable to connect to analysis service.');
       }
-      
-      // Fallback to mock analysis if API fails
       console.log('Falling back to mock analysis');
-      return await this.mockAnalysis(url);
+      return this.mockAnalysis(url);
     }
   }
 
-  async getAnalysisHistory(): Promise<AnalysisSession[]> {
-    try {
-      const stored = localStorage.getItem('analysis_history');
-      if (stored) {
-        const sessions = JSON.parse(stored);
-        return sessions.map((session: unknown) => {
-          const sessionObj = session as { timestamp: string; result: { timestamp: string } };
-          return {
-            ...sessionObj,
-            timestamp: new Date(sessionObj.timestamp),
-            result: {
-              ...sessionObj.result,
-              timestamp: new Date(sessionObj.result.timestamp)
-            }
-          };
-        });
-      }
-      return [];
-    } catch (error) {
-      console.error('Failed to load analysis history:', error);
-      return [];
-    }
-  }
+  // ── Save to FastAPI backend ───────────────────────────────────────────────
 
   async saveAnalysisSession(result: AnalysisResult): Promise<AnalysisSession> {
-    try {
-      const session: AnalysisSession = {
-        id: result.id,
-        title: this.generateSessionTitle(result),
-        timestamp: new Date(),
-        result
-      };
+    const session: AnalysisSession = {
+      id: result.id,
+      title: generateTitle(result),
+      timestamp: new Date(),
+      result,
+    };
 
-      const history = await this.getAnalysisHistory();
-      const updatedHistory = [session, ...history].slice(0, 50); // Keep last 50 sessions
-      
-      localStorage.setItem('analysis_history', JSON.stringify(updatedHistory));
-      return session;
-    } catch (error) {
-      console.error('Failed to save analysis session:', error);
-      throw error;
+    // Always update local cache (instant UI)
+    this._updateLocalCache(session);
+
+    // Persist to backend if user is logged in
+    const userId = getCurrentUserId();
+    if (userId) {
+      try {
+        await apiFetch('/analysis_results/', {
+          method: 'POST',
+          body: JSON.stringify({
+            user_id: userId,
+            doc_name: result.document_name,
+            doc_type: DOC_TYPE_MAP[result.document_type] || 'OTH',
+            status: 'completed',
+            summary: result.summary,
+            result: {
+              insights: result.insights,
+              sectors_affected: result.sectors_affected,
+              recommendations: result.recommendations,
+              risk_factors: result.risk_factors,
+              sentiment: result.sentiment,
+              confidence_score: result.confidence_score,
+            },
+          }),
+        });
+      } catch (e) {
+        console.warn('Failed to persist analysis to backend (cached locally):', e);
+      }
     }
+
+    return session;
   }
+
+  // ── Get history ───────────────────────────────────────────────────────────
+  // Tries backend first, falls back to local cache
+
+  async getAnalysisHistory(): Promise<AnalysisSession[]> {
+    const userId = getCurrentUserId();
+
+    if (userId) {
+      try {
+        const res = await apiFetch(`/analysis_results/?user_id=${userId}&limit=50`);
+        if (res.ok) {
+          const items: Record<string, any>[] = await res.json();
+          return items.map((item) => ({
+            id: item.id,
+            title: `${item.doc_name} - ${new Date(item.created_at).toLocaleDateString()}`,
+            timestamp: new Date(item.created_at),
+            result: {
+              id: item.id,
+              summary: item.summary,
+              insights: item.result?.insights || [],
+              sectors_affected: item.result?.sectors_affected || [],
+              recommendations: item.result?.recommendations || [],
+              risk_factors: item.result?.risk_factors || [],
+              sentiment: item.result?.sentiment || 'neutral',
+              confidence_score: item.result?.confidence_score || 0.8,
+              timestamp: new Date(item.created_at),
+              document_type: this._backendDocTypeToFrontend(item.doc_type),
+              document_name: item.doc_name,
+            } as AnalysisResult,
+          }));
+        }
+      } catch (e) {
+        console.warn('Backend history fetch failed, using cache:', e);
+      }
+    }
+
+    // Fall back to local cache
+    return this._readLocalCache();
+  }
+
+  // ── Delete session ────────────────────────────────────────────────────────
 
   async deleteAnalysisSession(sessionId: string): Promise<void> {
-    try {
-      const history = await this.getAnalysisHistory();
-      const updatedHistory = history.filter(session => session.id !== sessionId);
-      localStorage.setItem('analysis_history', JSON.stringify(updatedHistory));
-    } catch (error) {
-      console.error('Failed to delete analysis session:', error);
-      throw error;
+    // Remove from local cache
+    const history = await this._readLocalCache();
+    const updated = history.filter((s) => s.id !== sessionId);
+    localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(updated));
+
+    // Delete from backend
+    const userId = getCurrentUserId();
+    if (userId) {
+      try {
+        await apiFetch(`/analysis_results/${sessionId}?user_id=${userId}`, {
+          method: 'DELETE',
+        });
+      } catch (e) {
+        console.warn('Backend delete failed:', e);
+      }
     }
   }
 
-  private generateSessionTitle(result: AnalysisResult): string {
-    const date = new Date().toLocaleDateString();
-    const docName = result.document_name.split('.')[0].substring(0, 20);
-    return `${docName} - ${date}`;
-  }
+  // ── Export ────────────────────────────────────────────────────────────────
 
-  private getAuthToken(): string {
-    // Get auth token from store or localStorage
-            // In production, you would get the actual token from Supabase
-    const { user } = useAuthStore.getState();
-    return user?.id || '';
-  }
-
-  // Utility method to export analysis as PDF
   async exportToPDF(session: AnalysisSession): Promise<void> {
+    const content = this._formatForExport(session);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${session.title}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  private _mapApiResponse(
+    result: Record<string, any>,
+    docType: 'pdf' | 'image' | 'url',
+    docName: string
+  ): AnalysisResult {
+    return {
+      id: result.id || crypto.randomUUID(),
+      summary: result.summary || result.analysis || 'Analysis completed',
+      insights: result.insights || result.key_points || [],
+      sectors_affected: result.sectors_affected || result.sectors || [],
+      recommendations: result.recommendations || result.suggestions || [],
+      risk_factors: result.risk_factors || result.risks || [],
+      sentiment: result.sentiment || 'neutral',
+      confidence_score: result.confidence_score || result.confidence || 0.8,
+      timestamp: new Date(),
+      document_type: docType,
+      document_name: docName,
+    };
+  }
+
+  private _backendDocTypeToFrontend(docType: string): 'pdf' | 'image' | 'url' {
+    const map: Record<string, 'pdf' | 'image' | 'url'> = {
+      AR: 'pdf', SHL: 'pdf', DRHP: 'pdf',
+      CHART: 'image',
+      IR: 'url', BRK: 'url',
+    };
+    return map[docType] || 'pdf';
+  }
+
+  private _updateLocalCache(session: AnalysisSession): void {
     try {
-      // In a real implementation, this would generate and download a PDF
-      const content = this.formatAnalysisForExport(session);
-      const blob = new Blob([content], { type: 'text/plain' });
-      const url = URL.createObjectURL(blob);
-      
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${session.title}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Failed to export analysis:', error);
-      throw new Error('Failed to export analysis. Please try again.');
+      const history = this._readLocalCacheSync();
+      const updated = [session, ...history].slice(0, 50);
+      localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Local cache write failed:', e);
     }
   }
 
-  private formatAnalysisForExport(session: AnalysisSession): string {
+  private _readLocalCacheSync(): AnalysisSession[] {
+    try {
+      const stored = localStorage.getItem(LOCAL_CACHE_KEY);
+      if (!stored) return [];
+      return JSON.parse(stored).map((s: any) => ({
+        ...s,
+        timestamp: new Date(s.timestamp),
+        result: { ...s.result, timestamp: new Date(s.result.timestamp) },
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  private async _readLocalCache(): Promise<AnalysisSession[]> {
+    return this._readLocalCacheSync();
+  }
+
+  private _formatForExport(session: AnalysisSession): string {
     const { result } = session;
     return `
 FinSight Analysis Report
 ========================
-
 Document: ${result.document_name}
 Date: ${result.timestamp.toLocaleDateString()}
 Type: ${result.document_type.toUpperCase()}
-Confidence Score: ${(result.confidence_score * 100).toFixed(1)}%
+Confidence: ${(result.confidence_score * 100).toFixed(1)}%
 Sentiment: ${result.sentiment.toUpperCase()}
 
-EXECUTIVE SUMMARY
------------------
+SUMMARY
+-------
 ${result.summary}
 
 KEY INSIGHTS
 ------------
-${result.insights.map((insight, i) => `${i + 1}. ${insight}`).join('\n')}
+${result.insights.map((i, n) => `${n + 1}. ${i}`).join('\n')}
 
 RECOMMENDATIONS
 ---------------
-${result.recommendations.map((rec, i) => `${i + 1}. ${rec}`).join('\n')}
+${result.recommendations.map((r, n) => `${n + 1}. ${r}`).join('\n')}
 
 RISK FACTORS
 ------------
-${result.risk_factors.map((risk, i) => `${i + 1}. ${risk}`).join('\n')}
+${result.risk_factors.map((r, n) => `${n + 1}. ${r}`).join('\n')}
 
 SECTORS AFFECTED
 ----------------
@@ -315,7 +378,7 @@ ${result.sectors_affected.join(', ')}
 
 ---
 Generated by FinSight AI Platform
-    `;
+    `.trim();
   }
 }
 

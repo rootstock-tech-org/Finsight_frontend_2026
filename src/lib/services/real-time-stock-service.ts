@@ -1,6 +1,21 @@
-import { supabase } from '@/lib/supabase';
-import { supabaseRealtimeService, RealtimeCallback } from './supabase-realtime-service';
+/**
+ * real-time-stock-service.ts
+ *
+ * Supabase imports fully removed.
+ * Real-time subscriptions replaced with polling (call startPolling / stopPolling).
+ * All REST fetch methods now point to FastAPI or existing /api/ Next.js routes.
+ *
+ * Backend endpoints used:
+ *   GET /stocks/           → list/search stocks
+ *   GET /stocks/{id}       → single stock
+ *   GET /stocks/symbol/{s} → by symbol
+ */
+
 import { WatchlistItem } from '@/lib/store/stock-store';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+// ── Types (unchanged from original) ──────────────────────────────────────────
 
 export interface StockData {
   id: string;
@@ -39,10 +54,22 @@ export interface NewsItem {
   related_symbols: string[];
 }
 
-export class RealTimeStockService {
-  private subscriptions: Map<string, any> = new Map();
+// Callback type for polling updates (replaces Supabase RealtimeCallback)
+export type StockUpdateCallback = (stocks: StockData[]) => void;
 
-  // Fetch stocks from API
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+async function backendFetch(path: string): Promise<Response> {
+  return fetch(`${BACKEND_URL}${path}`);
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+
+export class RealTimeStockService {
+  private pollingIntervals: Map<string, ReturnType<typeof setInterval>> = new Map();
+
+  // ── Fetch stocks from FastAPI ─────────────────────────────────────────────
+
   async fetchStocks(params: {
     symbol?: string;
     search?: string;
@@ -50,184 +77,129 @@ export class RealTimeStockService {
     offset?: number;
   } = {}): Promise<{ stocks: StockData[]; total: number }> {
     try {
-      const searchParams = new URLSearchParams();
-      if (params.symbol) searchParams.set('symbol', params.symbol);
-      if (params.search) searchParams.set('search', params.search);
-      if (params.limit) searchParams.set('limit', params.limit.toString());
-      if (params.offset) searchParams.set('offset', params.offset.toString());
+      const qs = new URLSearchParams();
+      if (params.symbol) qs.set('symbol', params.symbol);
+      if (params.search) qs.set('name', params.search); // FastAPI uses `name` for search
+      if (params.limit)  qs.set('limit', String(params.limit));
+      if (params.offset) qs.set('offset', String(params.offset));
 
-      const response = await fetch(`/api/stocks?${searchParams}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const res = await backendFetch(`/stocks/?${qs}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-      return await response.json();
+      const rawStocks = await res.json();
+
+      // Normalize FastAPI shape → StockData shape
+      const stocks: StockData[] = rawStocks.map((s: any) => ({
+        id: s.id,
+        symbol: s.symbol,
+        company_name: s.name,
+        sector: s.sector,
+        current_price: s.current_price || 0,
+        price_change: 0,
+        price_change_percent: 0,
+        volume: 0,
+        last_updated: s.last_updated || new Date().toISOString(),
+      }));
+
+      return { stocks, total: stocks.length };
     } catch (error) {
       console.error('Error fetching stocks:', error);
       throw error;
     }
   }
 
-  // Fetch single stock details
+  // ── Fetch single stock by symbol ──────────────────────────────────────────
+
+  async fetchStockBySymbol(symbol: string): Promise<StockData | null> {
+    try {
+      const res = await backendFetch(`/stocks/symbol/${encodeURIComponent(symbol)}`);
+      if (res.status === 404) return null;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const s = await res.json();
+      return {
+        id: s.id,
+        symbol: s.symbol,
+        company_name: s.name,
+        sector: s.sector,
+        current_price: s.current_price || 0,
+        price_change: 0,
+        price_change_percent: 0,
+        volume: 0,
+        last_updated: s.last_updated || new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error(`Error fetching stock ${symbol}:`, error);
+      return null;
+    }
+  }
+
+  // ── Fetch stock details (falls back to /api/ Next.js routes for market/news) ──
+
   async fetchStockDetails(symbol: string): Promise<{
-    stock: StockData;
+    stock: StockData | null;
     marketData: MarketData[];
     news: NewsItem[];
   }> {
     try {
-      const response = await fetch(`/api/stocks/${symbol}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const [stock, marketRes, newsRes] = await Promise.allSettled([
+        this.fetchStockBySymbol(symbol),
+        fetch(`/api/market-data?symbol=${symbol}`),
+        fetch(`/api/news?symbol=${symbol}&limit=10`),
+      ]);
 
-      return await response.json();
+      return {
+        stock: stock.status === 'fulfilled' ? stock.value : null,
+        marketData:
+          marketRes.status === 'fulfilled' && marketRes.value.ok
+            ? (await marketRes.value.json()).marketData || []
+            : [],
+        news:
+          newsRes.status === 'fulfilled' && newsRes.value.ok
+            ? (await newsRes.value.json()).news || []
+            : [],
+      };
     } catch (error) {
       console.error('Error fetching stock details:', error);
       throw error;
     }
   }
 
-  // Fetch market data
-  async fetchMarketData(params: {
-    symbol?: string;
-    date?: string;
-    limit?: number;
-  } = {}): Promise<{ marketData: MarketData[] }> {
-    try {
-      const searchParams = new URLSearchParams();
-      if (params.symbol) searchParams.set('symbol', params.symbol);
-      if (params.date) searchParams.set('date', params.date);
-      if (params.limit) searchParams.set('limit', params.limit.toString());
+  // ── Polling-based "real-time" updates (replaces Supabase subscriptions) ───
+  // Call startPolling to get periodic updates; call stopPolling to cancel.
 
-      const response = await fetch(`/api/market-data?${searchParams}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+  startPolling(
+    key: string,
+    fetchFn: () => Promise<StockData[]>,
+    callback: StockUpdateCallback,
+    intervalMs = 30_000
+  ): void {
+    this.stopPolling(key); // clear existing
+    const id = setInterval(async () => {
+      try {
+        const data = await fetchFn();
+        callback(data);
+      } catch (e) {
+        console.warn(`Polling error [${key}]:`, e);
       }
+    }, intervalMs);
+    this.pollingIntervals.set(key, id);
+  }
 
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching market data:', error);
-      throw error;
+  stopPolling(key: string): void {
+    const id = this.pollingIntervals.get(key);
+    if (id !== undefined) {
+      clearInterval(id);
+      this.pollingIntervals.delete(key);
     }
   }
 
-  // Fetch news
-  async fetchNews(params: {
-    symbol?: string;
-    limit?: number;
-    offset?: number;
-    sentiment?: string;
-  } = {}): Promise<{ news: NewsItem[]; total: number }> {
-    try {
-      const searchParams = new URLSearchParams();
-      if (params.symbol) searchParams.set('symbol', params.symbol);
-      if (params.limit) searchParams.set('limit', params.limit.toString());
-      if (params.offset) searchParams.set('offset', params.offset.toString());
-      if (params.sentiment) searchParams.set('sentiment', params.sentiment);
-
-      const response = await fetch(`/api/news?${searchParams}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error fetching news:', error);
-      throw error;
-    }
+  stopAllPolling(): void {
+    this.pollingIntervals.forEach((id) => clearInterval(id));
+    this.pollingIntervals.clear();
   }
 
-  // Subscribe to real-time stock updates
-  subscribeToStockUpdates(
-    symbol: string,
-    callback: RealtimeCallback<StockData>
-  ) {
-    const subscriptionKey = `stock-${symbol}`;
-    
-    if (this.subscriptions.has(subscriptionKey)) {
-      this.unsubscribeFromStockUpdates(symbol);
-    }
+  // ── Convert FastAPI stock → WatchlistItem ─────────────────────────────────
 
-    const channel = supabaseRealtimeService.subscribeToStockSymbol(symbol, callback);
-    this.subscriptions.set(subscriptionKey, channel);
-    
-    return channel;
-  }
-
-  // Subscribe to market data updates
-  subscribeToMarketDataUpdates(
-    callback: RealtimeCallback<MarketData>
-  ) {
-    const subscriptionKey = 'market-data';
-    
-    if (this.subscriptions.has(subscriptionKey)) {
-      this.unsubscribeFromMarketDataUpdates();
-    }
-
-    const channel = supabaseRealtimeService.subscribeToMarketData(callback);
-    this.subscriptions.set(subscriptionKey, channel);
-    
-    return channel;
-  }
-
-  // Subscribe to news updates
-  subscribeToNewsUpdates(
-    callback: RealtimeCallback<NewsItem>
-  ) {
-    const subscriptionKey = 'news';
-    
-    if (this.subscriptions.has(subscriptionKey)) {
-      this.unsubscribeFromNewsUpdates();
-    }
-
-    const channel = supabaseRealtimeService.subscribeToTable('news', 'INSERT', undefined, callback);
-    this.subscriptions.set(subscriptionKey, channel);
-    
-    return channel;
-  }
-
-  // Unsubscribe from stock updates
-  unsubscribeFromStockUpdates(symbol: string) {
-    const subscriptionKey = `stock-${symbol}`;
-    const channel = this.subscriptions.get(subscriptionKey);
-    
-    if (channel) {
-      channel.unsubscribe();
-      this.subscriptions.delete(subscriptionKey);
-    }
-  }
-
-  // Unsubscribe from market data updates
-  unsubscribeFromMarketDataUpdates() {
-    const subscriptionKey = 'market-data';
-    const channel = this.subscriptions.get(subscriptionKey);
-    
-    if (channel) {
-      channel.unsubscribe();
-      this.subscriptions.delete(subscriptionKey);
-    }
-  }
-
-  // Unsubscribe from news updates
-  unsubscribeFromNewsUpdates() {
-    const subscriptionKey = 'news';
-    const channel = this.subscriptions.get(subscriptionKey);
-    
-    if (channel) {
-      channel.unsubscribe();
-      this.subscriptions.delete(subscriptionKey);
-    }
-  }
-
-  // Unsubscribe from all updates
-  unsubscribeAll() {
-    this.subscriptions.forEach((channel) => {
-      channel.unsubscribe();
-    });
-    this.subscriptions.clear();
-  }
-
-  // Convert StockData to WatchlistItem
   stockDataToWatchlistItem(stock: StockData): WatchlistItem {
     return {
       symbol: stock.symbol,
@@ -235,10 +207,10 @@ export class RealTimeStockService {
       type: 'stock',
       sector: stock.sector,
       last_price: stock.current_price,
-      change_percent: stock.price_change_percent
+      change_percent: stock.price_change_percent,
     };
   }
 }
 
-// Export singleton instance
+// Export singleton
 export const realTimeStockService = new RealTimeStockService();

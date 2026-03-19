@@ -1,18 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { externalStockApi } from '@/lib/services/external-stock-api';
-import { createAdminClient, createServerClient } from '@/lib/supabase';
 import { normalizeToBackendSymbol } from '@/lib/services/symbol-resolver';
-
-// Initialize Supabase only when credentials are present (local dev may not have service key)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const supabase = supabaseUrl && serviceRoleKey
-  ? createClient(supabaseUrl, serviceRoleKey)
-  : null;
-const supabaseAnon = supabaseUrl
-  ? createServerClient()
-  : null;
 
 export async function GET(
   _request: NextRequest,
@@ -24,31 +12,8 @@ export async function GET(
     const STALE_MS = 5 * 60 * 1000; // 5 minutes
 
     // 1) Try cached price first; if fresh, return immediately
+    // Supabase has been removed, so caching in DB is disabled.
     let cached: any = null;
-    if (supabaseAnon) {
-      try {
-        const { data } = await supabaseAnon
-          .from('stocks')
-          .select('symbol, company_name, current_price, price_change_percent, volume, market_cap, last_updated')
-          .eq('symbol', upper)
-          .single();
-        cached = data || null;
-        const lastUpdatedMs = cached?.last_updated ? Date.parse(cached.last_updated) : 0;
-        const isFresh = cached && typeof cached.current_price === 'number' && Date.now() - lastUpdatedMs <= STALE_MS;
-        if (isFresh) {
-          console.log(`💾 [STOCK-API] Returning fresh cached data for ${upper}`);
-          return NextResponse.json({
-            symbol: upper,
-            last_price: cached.current_price,
-            day_change: 0,
-            day_change_perc: cached.price_change_percent || 0,
-            volume: cached.volume || 0,
-            market_cap: cached.market_cap || null,
-            cached: true
-          });
-        }
-      } catch (_) {}
-    }
 
     // 2) Fetch live price from external provider (no mock/hardcoded fallback)
     let price: any;
@@ -82,60 +47,12 @@ export async function GET(
     }
 
     if (!price || price.last_price == null) {
-      // fallback to last known price from stocks table
-      if (cached && typeof cached.current_price === 'number') {
-        console.log(`💾 [STOCK-API] Returning stale cached data for ${upper} (no external price)`);
-        return NextResponse.json({
-          symbol: upper,
-          last_price: cached.current_price,
-          day_change: 0,
-          day_change_perc: cached.price_change_percent || 0,
-          volume: cached.volume || 0,
-          market_cap: cached.market_cap || null,
-          cached: true
-        });
-      }
       return NextResponse.json({ 
         error: 'Price not available', 
         symbol: upper, 
         last_price: null,
         message: 'Price data temporarily unavailable'
       }, { status: 200 });
-    }
-
-    // 3) Cache only if symbol is in any user's watchlist
-    if (supabase) {
-      try {
-        const { data: watch } = await supabase
-          .from('watchlist')
-          .select('symbol')
-          .eq('symbol', upper)
-          .limit(1);
-
-        if (watch && watch.length > 0) {
-          const stockPayload = {
-            symbol: upper,
-            company_name: upper,
-            current_price: price.last_price,
-            last_price: price.last_price,
-            price_change: price.change || 0,
-            price_change_percent: price.change_percent || 0,
-            volume: price.volume || 0,
-            market_cap: price.market_cap || null,
-            last_updated: new Date().toISOString(),
-            source: 'external'
-          } as any;
-
-          await supabase
-            .from('stocks')
-            .upsert(stockPayload);
-          console.log(`💾 [STOCK-API] Cached real price data for ${upper}: ₹${price.last_price}`);
-        } else {
-          console.log(`📝 [STOCK-API] Skipping cache for ${upper} (not in any watchlist)`);
-        }
-      } catch (e) {
-        console.warn('Stocks upsert check failed (continuing without persistence):', e);
-      }
     }
 
     return NextResponse.json({

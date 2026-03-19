@@ -1,9 +1,8 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/auth-store';
-import { useSupabase } from './providers/SupabaseProvider';
 import { Loader2 } from 'lucide-react';
 
 interface AuthGuardProps {
@@ -12,32 +11,26 @@ interface AuthGuardProps {
   redirectTo?: string;
 }
 
-const AuthGuard: React.FC<AuthGuardProps> = ({ 
-  children, 
-  requireAuth = true, 
-  redirectTo = '/login' 
+const AuthGuard: React.FC<AuthGuardProps> = ({
+  children,
+  requireAuth = true,
+  redirectTo = '/login',
 }) => {
-  const [loading, setLoading] = useState(true);
-  const { isAuthenticated, setUser, setAuthenticated } = useAuthStore();
-  const { user, loading: supabaseLoading } = useSupabase();
+  const { isAuthenticated, isHydrated } = useAuthStore();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!supabaseLoading) {
-      setUser(user);
-      setAuthenticated(!!user);
-      setLoading(false);
-      
-      if (requireAuth && !user) {
-        router.push(redirectTo);
-      } else if (!requireAuth && user) {
-        // User is logged in but trying to access login/register page
-        router.push('/dashboard');
-      }
-    }
-  }, [user, supabaseLoading, requireAuth, redirectTo, router, setUser, setAuthenticated]);
+  React.useEffect(() => {
+    if (!isHydrated) return; // wait for restoreSession() to finish
 
-  if (loading) {
+    if (requireAuth && !isAuthenticated) {
+      router.push(redirectTo);
+    } else if (!requireAuth && isAuthenticated) {
+      router.push('/dashboard');
+    }
+  }, [isHydrated, isAuthenticated, requireAuth, redirectTo, router]);
+
+  // Show spinner until session is restored
+  if (!isHydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-center">
@@ -48,13 +41,8 @@ const AuthGuard: React.FC<AuthGuardProps> = ({
     );
   }
 
-  if (requireAuth && !isAuthenticated) {
-    return null; // Will redirect to login
-  }
-
-  if (!requireAuth && isAuthenticated) {
-    return null; // Will redirect to dashboard
-  }
+  if (requireAuth && !isAuthenticated) return null;
+  if (!requireAuth && isAuthenticated) return null;
 
   return <>{children}</>;
 };

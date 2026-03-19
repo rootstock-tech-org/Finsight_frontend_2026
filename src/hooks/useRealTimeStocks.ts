@@ -1,6 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { realTimeStockService, StockData, MarketData, NewsItem } from '@/lib/services/real-time-stock-service';
-import { supabaseRealtimeService } from '@/lib/services/supabase-realtime-service';
 import { WatchlistItem } from '@/lib/store/stock-store';
 
 export interface UseRealTimeStocksOptions {
@@ -12,34 +11,25 @@ export interface UseRealTimeStocksOptions {
   refreshInterval?: number;
 }
 
+// ── useRealTimeStocks ─────────────────────────────────────────────────────
 export function useRealTimeStocks(options: UseRealTimeStocksOptions = {}) {
+  const {
+    symbol, search,
+    limit = 50, offset = 0,
+    autoRefresh = true,
+    refreshInterval = 30_000,
+  } = options;
+
   const [stocks, setStocks] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
 
-  const {
-    symbol,
-    search,
-    limit = 50,
-    offset = 0,
-    autoRefresh = true,
-    refreshInterval = 30000 // 30 seconds
-  } = options;
-
-  // Fetch stocks
   const fetchStocks = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const data = await realTimeStockService.fetchStocks({
-        symbol,
-        search,
-        limit,
-        offset
-      });
-      
+      const data = await realTimeStockService.fetchStocks({ symbol, search, limit, offset });
       setStocks(data.stocks);
       setTotal(data.total);
     } catch (err) {
@@ -50,71 +40,34 @@ export function useRealTimeStocks(options: UseRealTimeStocksOptions = {}) {
     }
   }, [symbol, search, limit, offset]);
 
-  // Subscribe to real-time updates
+  // Initial fetch
+  useEffect(() => { fetchStocks(); }, [fetchStocks]);
+
+  // Polling replaces Supabase realtime subscription
   useEffect(() => {
     if (!autoRefresh) return;
-
-    // Subscribe to all stock updates
-    const channel = supabaseRealtimeService.subscribeToTable('stocks', 'UPDATE', undefined, (payload) => {
-      setStocks(prevStocks => {
-        const updatedStocks = [...prevStocks];
-        const index = updatedStocks.findIndex(stock => stock.symbol === payload.new.symbol);
-        
-        if (index !== -1) {
-          updatedStocks[index] = payload.new;
-        } else if (payload.new.symbol === symbol) {
-          // If this is the specific symbol we're watching, add it
-          updatedStocks.unshift(payload.new);
-        }
-        
-        return updatedStocks;
-      });
-    });
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [autoRefresh, symbol]);
-
-  // Auto-refresh on interval
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const interval = setInterval(fetchStocks, refreshInterval);
-    return () => clearInterval(interval);
+    const id = setInterval(fetchStocks, refreshInterval);
+    return () => clearInterval(id);
   }, [fetchStocks, autoRefresh, refreshInterval]);
 
-  // Initial fetch
-  useEffect(() => {
-    fetchStocks();
-  }, [fetchStocks]);
-
-  return {
-    stocks,
-    loading,
-    error,
-    total,
-    refetch: fetchStocks
-  };
+  return { stocks, loading, error, total, refetch: fetchStocks };
 }
 
+// ── useRealTimeStockDetails ───────────────────────────────────────────────
 export function useRealTimeStockDetails(symbol: string) {
   const [stock, setStock] = useState<StockData | null>(null);
   const [marketData, setMarketData] = useState<MarketData[]>([]);
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Fetch stock details
   const fetchDetails = useCallback(async () => {
     if (!symbol) return;
-
     try {
       setLoading(true);
       setError(null);
-      
       const data = await realTimeStockService.fetchStockDetails(symbol);
-      
       setStock(data.stock);
       setMarketData(data.marketData);
       setNews(data.news);
@@ -126,55 +79,29 @@ export function useRealTimeStockDetails(symbol: string) {
     }
   }, [symbol]);
 
-  // Subscribe to real-time updates for this specific stock
-  useEffect(() => {
-    if (!symbol) return;
-
-    const channel = realTimeStockService.subscribeToStockUpdates(symbol, (payload) => {
-      if (payload.new && 'symbol' in payload.new) {
-        setStock(payload.new as StockData);
-      }
-    });
-
-    return () => {
-      realTimeStockService.unsubscribeFromStockUpdates(symbol);
-    };
-  }, [symbol]);
-
-  // Initial fetch
   useEffect(() => {
     fetchDetails();
+    // Poll for price updates every 30s (replaces Supabase realtime)
+    pollRef.current = setInterval(fetchDetails, 30_000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchDetails]);
 
-  return {
-    stock,
-    marketData,
-    news,
-    loading,
-    error,
-    refetch: fetchDetails
-  };
+  return { stock, marketData, news, loading, error, refetch: fetchDetails };
 }
 
+// ── useRealTimeNews ───────────────────────────────────────────────────────
 export function useRealTimeNews(options: { symbol?: string; limit?: number } = {}) {
+  const { symbol, limit = 20 } = options;
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [total, setTotal] = useState(0);
 
-  const { symbol, limit = 20 } = options;
-
-  // Fetch news
   const fetchNews = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const data = await realTimeStockService.fetchNews({
-        symbol,
-        limit
-      });
-      
+      const data = await realTimeStockService.fetchNews({ symbol, limit });
       setNews(data.news);
       setTotal(data.total);
     } catch (err) {
@@ -185,35 +112,18 @@ export function useRealTimeNews(options: { symbol?: string; limit?: number } = {
     }
   }, [symbol, limit]);
 
-  // Subscribe to real-time news updates
-  useEffect(() => {
-    const channel = supabaseRealtimeService.subscribeToTable('news', 'INSERT', undefined, (payload) => {
-      setNews(prevNews => {
-        // Add new news to the beginning
-        return [payload.new, ...prevNews];
-      });
-    });
+  useEffect(() => { fetchNews(); }, [fetchNews]);
 
-    return () => {
-      channel.unsubscribe();
-    };
-  }, []);
-
-  // Initial fetch
+  // Poll for new articles every 60s (replaces Supabase INSERT subscription)
   useEffect(() => {
-    fetchNews();
+    const id = setInterval(fetchNews, 60_000);
+    return () => clearInterval(id);
   }, [fetchNews]);
 
-  return {
-    news,
-    loading,
-    error,
-    total,
-    refetch: fetchNews
-  };
+  return { news, loading, error, total, refetch: fetchNews };
 }
 
-// Hook to convert StockData to WatchlistItem
+// ── useStockDataToWatchlistItem ───────────────────────────────────────────
 export function useStockDataToWatchlistItem() {
   return useCallback((stock: StockData): WatchlistItem => {
     return realTimeStockService.stockDataToWatchlistItem(stock);

@@ -1,134 +1,138 @@
-import { supabase } from '@/lib/supabase';
+/**
+ * watchlist-service.ts
+ *
+ * All calls now go to FastAPI backend.
+ * Supabase import removed entirely.
+ *
+ * Backend endpoints used:
+ *   GET    /watchlist/{user_id}           → enriched list with PnL
+ *   POST   /watchlist/?user_id=           → add stock (body: WatchlistCreate)
+ *   DELETE /watchlist/{id}?user_id=       → remove entry
+ *   PATCH  /watchlist/{id}?user_id=       → update notes/added_price
+ *   GET    /watchlist/{user_id}/stats     → stats
+ *   POST   /watchlist/bulk?user_id=       → bulk add
+ */
+
 import { WatchlistItem } from '@/lib/store/stock-store';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface WatchlistApiItem {
   id: string;
   user_id: string;
+  stock_id: string;
   symbol: string;
-  company_name?: string;
-  notes?: string;
+  name: string;
+  sector?: string;
+  exchange?: string;
+  added_price?: number;
+  current_price?: number;
+  pnl?: number;
+  pnl_percentage?: number;
   added_at: string;
-  created_at: string;
-  updated_at: string;
-  stocks?: {
-    symbol: string;
-    company_name: string;
-    current_price: number;
-    price_change_percent: number;
-    sector: string;
-  };
+  notes?: string;
 }
 
+export interface WatchlistStats {
+  total_stocks: number;
+  positive_pnl_count: number;
+  negative_pnl_count: number;
+  no_price_data_count: number;
+  total_pnl: number;
+  average_pnl_percentage: number;
+}
+
+// ── Helper ────────────────────────────────────────────────────────────────────
+
+async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  return fetch(`${BACKEND_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers || {}),
+    },
+  });
+}
+
+// ── Service ───────────────────────────────────────────────────────────────────
+
 export class WatchlistService {
-  // Fetch user's watchlist
+
+  // ── Fetch enriched watchlist ──────────────────────────────────────────────
+
   async fetchWatchlist(userId: string): Promise<WatchlistApiItem[]> {
     try {
-      const response = await fetch(`/api/watchlist?user_id=${userId}`);
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      // Return as-is without fetching prices to ensure instant list render
-      return data.watchlist || [];
+      const res = await apiFetch(`/watchlist/${userId}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: WatchlistApiItem[] = await res.json();
+      return data;
     } catch (error) {
       console.error('Error fetching watchlist:', error);
       throw error;
     }
   }
 
-  // Add stock to watchlist
+  // ── Add stock ─────────────────────────────────────────────────────────────
+
   async addToWatchlist(
-    userId: string, 
-    symbol: string, 
-    companyName?: string, 
+    userId: string,
+    symbol: string,
+    addedPrice?: number,
     notes?: string
   ): Promise<WatchlistApiItem> {
     try {
-      const response = await fetch('/api/watchlist', {
+      const res = await apiFetch(`/watchlist/?user_id=${userId}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
-          user_id: userId,
-          symbol,
-          company_name: companyName,
-          notes
+          symbol: symbol.toUpperCase(),
+          ...(addedPrice != null && { added_price: addedPrice }),
+          ...(notes != null && { notes }),
         }),
       });
 
-      if (!response.ok) {
-        // If already exists, treat as success by returning the existing item
-        if (response.status === 409) {
-          try {
-            const existingRes = await fetch(`/api/watchlist?user_id=${userId}`);
-            if (existingRes.ok) {
-              const existingJson = await existingRes.json();
-              const existing = (existingJson.watchlist || []).find((w: any) => w.symbol === symbol);
-              if (existing) {
-                return existing as WatchlistApiItem;
-              }
-            }
-          } catch (_) {
-            // ignore and fall through to synthetic
-          }
-          // Fallback synthetic item to keep UI consistent
-          return {
-            id: crypto?.randomUUID?.() || `${userId}-${symbol}`,
-            user_id: userId,
-            symbol,
-            company_name: companyName || symbol,
-            notes: notes || '',
-            added_at: new Date().toISOString(),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          } as unknown as WatchlistApiItem;
+      // 400 with "already exists" → fetch existing item and return it
+      if (res.status === 400) {
+        const err = await res.json().catch(() => ({}));
+        const msg: string = err.detail || '';
+        if (msg.toLowerCase().includes('already')) {
+          const existing = await this.fetchWatchlist(userId);
+          const found = existing.find((w) => w.symbol === symbol.toUpperCase());
+          if (found) return found;
         }
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        throw new Error(msg || `HTTP ${res.status}`);
       }
 
-      const data = await response.json();
-
-      // Fetch price only for the newly added symbol so it can show immediately
-      try {
-        // Use direct stock price endpoint that also persists to DB
-        const priceRes = await fetch(`/api/stock/${encodeURIComponent(symbol)}/price`);
-        if (priceRes.ok) {
-          const priceData = await priceRes.json();
-          return {
-            ...data.item,
-            stocks: {
-              symbol,
-              company_name: companyName || symbol,
-              current_price: Number(priceData?.last_price) || 0,
-              price_change_percent: Number(priceData?.day_change_perc) || 0,
-              sector: data.item?.stocks?.sector || 'Unknown'
-            }
-          } as WatchlistApiItem;
-        }
-      } catch (e) {
-        // Non-fatal; return item without price
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = Array.isArray(err.detail)
+  ? err.detail.map((d: any) => d.msg).join(', ')
+  : err.detail;
+throw new Error(detail || `HTTP ${res.status}`);
       }
 
-      return data.item;
+      return await res.json();
     } catch (error) {
       console.error('Error adding to watchlist:', error);
       throw error;
     }
   }
 
-  // Remove stock from watchlist
-  async removeFromWatchlist(userId: string, symbol: string): Promise<void> {
-    try {
-      const response = await fetch(`/api/watchlist?user_id=${userId}&symbol=${symbol}`, {
-        method: 'DELETE',
-      });
+  // ── Remove stock ──────────────────────────────────────────────────────────
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+  async removeFromWatchlist(userId: string, watchlistId: string): Promise<void> {
+    try {
+      const res = await apiFetch(
+        `/watchlist/${watchlistId}?user_id=${userId}`,
+        { method: 'DELETE' }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = Array.isArray(err.detail)
+  ? err.detail.map((d: any) => d.msg).join(', ')
+  : err.detail;
+throw new Error(detail || `HTTP ${res.status}`);
       }
     } catch (error) {
       console.error('Error removing from watchlist:', error);
@@ -136,65 +140,95 @@ export class WatchlistService {
     }
   }
 
-  // Convert WatchlistApiItem to WatchlistItem
+  // ── Remove by symbol (convenience — fetches ID first) ────────────────────
+
+  async removeBySymbol(userId: string, symbol: string): Promise<void> {
+    const watchlist = await this.fetchWatchlist(userId);
+    const entry = watchlist.find((w) => w.symbol === symbol.toUpperCase());
+    if (!entry) return; // already gone
+    await this.removeFromWatchlist(userId, entry.id);
+  }
+
+  // ── Update entry (notes / added_price) ───────────────────────────────────
+
+  async updateWatchlistEntry(
+    userId: string,
+    watchlistId: string,
+    updates: { added_price?: number; notes?: string }
+  ): Promise<WatchlistApiItem> {
+    try {
+      const res = await apiFetch(
+        `/watchlist/${watchlistId}?user_id=${userId}`,
+        { method: 'PATCH', body: JSON.stringify(updates) }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = Array.isArray(err.detail)
+  ? err.detail.map((d: any) => d.msg).join(', ')
+  : err.detail;
+throw new Error(detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('Error updating watchlist entry:', error);
+      throw error;
+    }
+  }
+
+  // ── Bulk add ──────────────────────────────────────────────────────────────
+
+  async bulkAdd(
+    userId: string,
+    symbols: string[],
+    notes?: string
+  ): Promise<WatchlistApiItem[]> {
+    try {
+      const res = await apiFetch(`/watchlist/bulk?user_id=${userId}`, {
+        method: 'POST',
+        body: JSON.stringify({ symbols: symbols.map((s) => s.toUpperCase()), notes }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        const detail = Array.isArray(err.detail)
+  ? err.detail.map((d: any) => d.msg).join(', ')
+  : err.detail;
+throw new Error(detail || `HTTP ${res.status}`);
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('Error bulk adding to watchlist:', error);
+      throw error;
+    }
+  }
+
+  // ── Stats ─────────────────────────────────────────────────────────────────
+
+  async getStats(userId: string): Promise<WatchlistStats> {
+    try {
+      const res = await apiFetch(`/watchlist/${userId}/stats`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (error) {
+      console.error('Error fetching watchlist stats:', error);
+      throw error;
+    }
+  }
+
+  // ── Converters ────────────────────────────────────────────────────────────
+
+  /** Backend enriched item → Zustand WatchlistItem */
   apiItemToWatchlistItem(item: WatchlistApiItem): WatchlistItem {
     return {
       symbol: item.symbol,
-      name: item.company_name || item.stocks?.company_name || item.symbol,
+      name: item.name || item.symbol,
       type: 'stock',
-      sector: item.stocks?.sector,
-      last_price: typeof item.stocks?.current_price === 'number' && item.stocks.current_price > 0 ? item.stocks.current_price : undefined,
-      change_percent: item.stocks?.price_change_percent || 0
-    };
-  }
-
-  // Fetch current prices for watchlist items
-  async fetchCurrentPrices(watchlistItems: WatchlistApiItem[]): Promise<WatchlistApiItem[]> {
-    const itemsWithPrices = await Promise.all(
-      watchlistItems.map(async (item) => {
-        // If we already have price data, return as is
-        if (item.stocks?.current_price && item.stocks.current_price > 0) {
-          return item;
-        }
-
-        // Try to fetch current price from external API
-        try {
-          const response = await fetch(`/api/stock/${encodeURIComponent(item.symbol)}/price`);
-          if (response.ok) {
-            const priceData = await response.json();
-            return {
-              ...item,
-              stocks: {
-                ...item.stocks,
-                symbol: item.symbol,
-                company_name: item.company_name || item.symbol,
-                current_price: priceData.last_price || 0,
-                price_change_percent: priceData.day_change_perc || 0,
-                sector: item.stocks?.sector || 'Unknown'
-              }
-            };
-          }
-        } catch (error) {
-          console.error(`Error fetching price for ${item.symbol}:`, error);
-        }
-
-        return item;
-      })
-    );
-
-    return itemsWithPrices;
-  }
-
-  // Convert WatchlistItem to WatchlistApiItem
-  watchlistItemToApiItem(item: WatchlistItem, userId: string): Partial<WatchlistApiItem> {
-    return {
-      user_id: userId,
-      symbol: item.symbol,
-      company_name: item.name,
-      notes: ''
+      sector: item.sector,
+      last_price: item.current_price ?? undefined,
+      change_percent: item.pnl_percentage ?? 0,
     };
   }
 }
 
-// Export singleton instance
+// Export singleton
 export const watchlistService = new WatchlistService();
+export default watchlistService;

@@ -73,7 +73,7 @@ export function useWatchlist() {
     }
 
     try {
-      const newItem = await watchlistService.addToWatchlist(user.id, symbol, companyName, notes);
+      const newItem = await watchlistService.addToWatchlist(user.id, symbol, undefined, notes);
       
       // Update local state immediately
       const watchlistItem = watchlistService.apiItemToWatchlistItem(newItem);

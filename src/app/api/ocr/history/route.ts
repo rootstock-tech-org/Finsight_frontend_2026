@@ -1,228 +1,129 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { ocrApi } from '@/lib/services/ocr-api';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL ?? '';
 
-/**
- * GET /api/ocr/history
- * Get document analysis history for the authenticated user
- */
+function getUserId(request: NextRequest): string | null {
+  const auth = request.headers.get('authorization');
+  if (!auth) return null;
+  return auth.replace('Bearer ', '').trim() || null;
+}
+
+function fapiHeaders(userId: string) {
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${userId}` };
+}
+
 export async function GET(request: NextRequest) {
   try {
-    // Get user from request
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      );
-    }
+    const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '10');
-    const status = searchParams.get('status');
-    const documentType = searchParams.get('document_type');
-    const search = searchParams.get('search');
-    const sortBy = searchParams.get('sort_by') || 'created_at';
-    const sortOrder = searchParams.get('sort_order') || 'desc';
+    const page = parseInt(searchParams.get('page') ?? '1');
+    const limit = parseInt(searchParams.get('limit') ?? '10');
+    const status = searchParams.get('status') ?? '';
+    const documentType = searchParams.get('document_type') ?? '';
+    const search = searchParams.get('search') ?? '';
+    const sortBy = searchParams.get('sort_by') ?? 'created_at';
+    const sortOrder = searchParams.get('sort_order') ?? 'desc';
 
-    const offset = (page - 1) * limit;
+    const params = new URLSearchParams({
+      page: page.toString(), limit: limit.toString(),
+      sort_by: sortBy, sort_order: sortOrder,
+    });
+    if (status) params.set('status', status);
+    if (documentType) params.set('document_type', documentType);
+    if (search) params.set('search', search);
 
-    console.log('📊 Fetching analysis history:', {
-      userId: user.id,
-      page,
-      limit,
-      status,
-      documentType,
-      search
+    const res = await fetch(`${FASTAPI}/analysis_results/?user_id=${userId}&${params}`, {
+      headers: fapiHeaders(userId),
     });
 
-    // Build query
-    let query = supabase
-      .from('document_analysis')
-      .select('*', { count: 'exact' })
-      .eq('user_id', user.id);
-
-    // Apply filters
-    if (status) {
-      query = query.eq('status', status);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return NextResponse.json({ error: err.detail ?? 'Failed to fetch history' }, { status: 500 });
     }
 
-    if (documentType) {
-      query = query.eq('document_type', documentType);
-    }
+    const data = await res.json();
 
-    if (search) {
-      query = query.or(`file_name.ilike.%${search}%,company_name.ilike.%${search}%`);
-    }
+    // Compute statistics from the full list if not provided by backend
+    const analyses: any[] = data.analyses ?? data.items ?? data ?? [];
+    const total: number = data.total ?? analyses.length;
+    const totalPages = Math.ceil(total / limit);
+    const offset = (page - 1) * limit;
 
-    // Apply sorting
-    const validSortFields = ['created_at', 'updated_at', 'file_name', 'company_name', 'file_size'];
-    const sortField = validSortFields.includes(sortBy) ? sortBy : 'created_at';
-    const sortDirection = sortOrder === 'asc' ? { ascending: true } : { ascending: false };
-    
-    query = query.order(sortField, sortDirection);
-
-    // Apply pagination
-    query = query.range(offset, offset + limit - 1);
-
-    const { data: analyses, error, count } = await query;
-
-    if (error) {
-      console.error('Database error fetching history:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch analysis history' },
-        { status: 500 }
-      );
-    }
-
-    // Get statistics
-    const { data: stats } = await supabase
-      .from('document_analysis')
-      .select('status, document_type, file_size')
-      .eq('user_id', user.id);
-
-    const statistics = {
-      total: count || 0,
-      completed: stats?.filter(s => s.status === 'completed').length || 0,
-      processing: stats?.filter(s => s.status === 'processing').length || 0,
-      failed: stats?.filter(s => s.status === 'failed').length || 0,
-      totalFileSize: stats?.reduce((sum, s) => sum + (s.file_size || 0), 0) || 0,
-      documentTypes: stats?.reduce((acc, s) => {
-        const type = s.document_type || 'Unknown';
-        acc[type] = (acc[type] || 0) + 1;
+    const statistics = data.statistics ?? {
+      total,
+      completed: analyses.filter((a: any) => a.status === 'completed').length,
+      processing: analyses.filter((a: any) => a.status === 'processing').length,
+      failed: analyses.filter((a: any) => a.status === 'failed').length,
+      totalFileSize: analyses.reduce((s: number, a: any) => s + (a.file_size ?? 0), 0),
+      documentTypes: analyses.reduce((acc: Record<string, number>, a: any) => {
+        const t = a.document_type ?? 'Unknown';
+        acc[t] = (acc[t] ?? 0) + 1;
         return acc;
-      }, {} as Record<string, number>) || {}
+      }, {}),
     };
 
     return NextResponse.json({
-      analyses: analyses || [],
+      analyses,
       pagination: {
-        page,
-        limit,
-        total: count || 0,
-        totalPages: Math.ceil((count || 0) / limit),
-        hasNext: offset + limit < (count || 0),
-        hasPrev: page > 1
+        page, limit, total, totalPages,
+        hasNext: offset + limit < total,
+        hasPrev: page > 1,
       },
       statistics,
-      filters: {
-        status,
-        document_type: documentType,
-        search,
-        sort_by: sortField,
-        sort_order: sortOrder
-      }
+      filters: { status, document_type: documentType, search, sort_by: sortBy, sort_order: sortOrder },
     });
-
   } catch (error) {
-    console.error('History API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('GET /api/ocr/history error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
-/**
- * DELETE /api/ocr/history
- * Delete analysis records
- */
 export async function DELETE(request: NextRequest) {
   try {
-    const authHeader = request.headers.get('authorization');
-    if (!authHeader) {
-      return NextResponse.json(
-        { error: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Invalid authentication token' },
-        { status: 401 }
-      );
-    }
+    const userId = getUserId(request);
+    if (!userId) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
     const body = await request.json();
     const { analysis_ids, delete_all } = body;
 
     if (delete_all) {
-      // Delete all analyses for the user
-      const { error } = await supabase
-        .from('document_analysis')
-        .delete()
-        .eq('user_id', user.id);
-
-      if (error) {
-        console.error('Database error deleting all analyses:', error);
-        return NextResponse.json(
-          { error: 'Failed to delete analyses' },
-          { status: 500 }
-        );
-      }
-
-      return NextResponse.json({
-        success: true,
-        message: 'All analyses deleted successfully',
-        deleted_count: 'all'
+      const res = await fetch(`${FASTAPI}/analysis_results/?user_id=${userId}`, {
+        method: 'DELETE',
+        headers: fapiHeaders(userId),
       });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        return NextResponse.json({ error: err.detail ?? 'Failed to delete analyses' }, { status: 500 });
+      }
+      return NextResponse.json({ success: true, message: 'All analyses deleted', deleted_count: 'all' });
     }
 
-    if (!analysis_ids || !Array.isArray(analysis_ids) || analysis_ids.length === 0) {
-      return NextResponse.json(
-        { error: 'analysis_ids array is required' },
-        { status: 400 }
-      );
+    if (!Array.isArray(analysis_ids) || analysis_ids.length === 0) {
+      return NextResponse.json({ error: 'analysis_ids array is required' }, { status: 400 });
     }
 
-    // Delete specific analyses
-    const { error, count } = await supabase
-      .from('document_analysis')
-      .delete()
-      .eq('user_id', user.id)
-      .in('id', analysis_ids);
+    const res = await fetch(`${FASTAPI}/analysis_results/batch-delete`, {
+      method: 'DELETE',
+      headers: fapiHeaders(userId),
+      body: JSON.stringify({ user_id: userId, analysis_ids }),
+    });
 
-    if (error) {
-      console.error('Database error deleting analyses:', error);
-      return NextResponse.json(
-        { error: 'Failed to delete analyses' },
-        { status: 500 }
-      );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return NextResponse.json({ error: err.detail ?? 'Failed to delete analyses' }, { status: 500 });
     }
 
+    const data = await res.json();
     return NextResponse.json({
       success: true,
       message: 'Analyses deleted successfully',
-      deleted_count: count || 0
+      deleted_count: data.deleted_count ?? analysis_ids.length,
     });
-
   } catch (error) {
-    console.error('Delete history API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
+    console.error('DELETE /api/ocr/history error:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
-
-

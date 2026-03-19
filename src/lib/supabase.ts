@@ -1,57 +1,40 @@
-import { createClient } from '@supabase/supabase-js'
-import { createBrowserClient } from '@supabase/ssr'
+/**
+ * lib/supabase.ts — stub
+ *
+ * Supabase has been replaced by FastAPI.
+ * This file exists only to prevent "Cannot find module '@/lib/supabase'"
+ * errors from any files that haven't been updated yet.
+ *
+ * DO NOT use these exports — they are no-ops.
+ */
 
-// Get environment variables
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+// Minimal no-op supabase shape so destructuring imports don't crash at runtime
+export const supabase = {
+  auth: {
+    getSession:         async () => ({ data: { session: null }, error: null }),
+    getUser:            async () => ({ data: { user: null },    error: null }),
+    onAuthStateChange:  (_cb: any) => ({ data: { subscription: { unsubscribe: () => {} } } }),
+    signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: 'Supabase removed' } }),
+    signUp:             async () => ({ data: { user: null, session: null }, error: { message: 'Supabase removed' } }),
+    signOut:            async () => ({ error: null }),
+    signInWithOAuth:    async () => ({ error: { message: 'Google OAuth not available' } }),
+    signInWithOtp:      async () => ({ data: null, error: { message: 'OTP not available' } }),
+    verifyOtp:          async () => ({ data: { user: null }, error: { message: 'OTP not available' } }),
+    resetPasswordForEmail: async () => ({ error: { message: 'Password reset not available' } }),
+    updateUser:         async () => ({ data: { user: null }, error: { message: 'Supabase removed' } }),
+  },
+  from:    (_table: string) => ({ select: () => ({ data: null, error: { message: 'Supabase removed' } }) }),
+  storage: { from: (_bucket: string) => ({}) },
+  channel: (_name: string) => ({
+    on: function() { return this },
+    subscribe: function() { return this },
+    unsubscribe: () => {},
+    send: async () => {},
+    track: async () => {},
+  }),
+} as any
 
-// Validate environment variables
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(`
-    Missing Supabase environment variables!
-    
-    Please create a .env.local file with:
-    NEXT_PUBLIC_SUPABASE_URL=https://pfbcpqifhbqpymnagzss.supabase.co
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_actual_anon_key_here
-    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
-    
-    Current values:
-    NEXT_PUBLIC_SUPABASE_URL: ${supabaseUrl || 'NOT SET'}
-    NEXT_PUBLIC_SUPABASE_ANON_KEY: ${supabaseAnonKey ? 'SET' : 'NOT SET'}
-  `)
-}
+export const createServerClient = () => supabase
+export const createAdminClient = () => supabase
 
-// Debug logging (only in development)
-if (process.env.NODE_ENV === 'development') {
-  console.log('🔧 Supabase Configuration:')
-  console.log('URL:', supabaseUrl)
-  console.log('Anon Key exists:', !!supabaseAnonKey)
-  console.log('Anon Key length:', supabaseAnonKey?.length || 0)
-  console.log('Anon Key starts with:', supabaseAnonKey?.substring(0, 20) || 'N/A')
-}
-
-// Browser client for client-side usage
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
-
-// Server client for server-side usage
-export const createServerClient = () => {
-  return createClient(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: false,
-    },
-  })
-}
-
-// Admin client for server-side operations (use with caution)
-export const createAdminClient = () => {
-  if (!serviceRoleKey) {
-    throw new Error('Service role key not available. Set SUPABASE_SERVICE_ROLE_KEY in your environment variables.')
-  }
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  })
-}
+export default supabase

@@ -1,4 +1,4 @@
-// File: /Users/tushar/new_finsight/FinSight-FrontEnd/src/app/login/page.tsx
+// File: C:\Users\suriv\Documents\finsight_frontend_latest\src\app\login\page.tsx
 import * as entry from '../../../../src/app/login/page.js'
 import type { ResolvingMetadata, ResolvingViewport } from 'next/dist/lib/metadata/types/metadata-interface.js'
 

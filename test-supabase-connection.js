@@ -33,7 +33,7 @@ async function testRegistration() {
     console.log('🧪 Testing Registration...');
     
     try {
-        const { supabaseAuthService } = await import('./src/lib/services/supabase-auth-service.ts');
+        const {fastapiAuthService} = await import('./src/lib/services/supabase-auth-service.ts');
         
         const testData = {
             email: `test${Date.now()}@example.com`,

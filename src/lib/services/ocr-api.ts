@@ -209,12 +209,16 @@ export class OCRApiService {
 
       if (!response.ok) {
         let errorMessage = `HTTP error! status: ${response.status}`;
+        const responseText = await response.text();
         try {
-          const errorData = await response.json();
-          errorMessage += `, message: ${errorData.detail || errorData.message || 'Unknown error'}`;
-        } catch (jsonError) {
-          const errorText = await response.text();
-          errorMessage += `, response: ${errorText}`;
+          const errorData = responseText ? JSON.parse(responseText) : null;
+          if (errorData) {
+            errorMessage += `, message: ${errorData.detail || errorData.message || 'Unknown error'}`;
+          } else {
+            errorMessage += `, response: ${responseText || 'empty body'}`;
+          }
+        } catch {
+          errorMessage += `, response: ${responseText || 'empty body'}`;
         }
         throw new Error(errorMessage);
       }
