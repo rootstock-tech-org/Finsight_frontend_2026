@@ -1,9 +1,4 @@
 {
   "/favicon.ico/route": "app/favicon.ico/route.js",
-  "/api/stock/[symbol]/price/route": "app/api/stock/[symbol]/price/route.js",
-  "/api/external-stocks/price/[symbol]/route": "app/api/external-stocks/price/[symbol]/route.js",
-  "/api/ocr/upload/route": "app/api/ocr/upload/route.js",
-  "/page": "app/page.js",
-  "/login/page": "app/login/page.js",
-  "/dashboard/page": "app/dashboard/page.js"
+  "/stocks/page": "app/stocks/page.js"
 }
