@@ -8,9 +8,8 @@ import CarouselModal from '@/components/CarouselModal';
 import { Button } from '@/components/ui/button';
 import {
   TrendingUp, Eye, Plus, FileText,
-  History, BarChart3, Download, CheckCircle, XCircle, X,
+  History, BarChart3, CheckCircle, XCircle, X,
 } from 'lucide-react';
-import { PDFGenerator } from '@/lib/utils/pdf-generator';
 import Link from 'next/link';
 import OCRDocumentUpload from '@/components/OCRDocumentUpload';
 import OCRAnalysisHistory from '@/components/OCRAnalysisHistory';
@@ -38,72 +37,13 @@ const TIER_MAX_SLOTS: Record<string, number> = {
   free: 10, basic: 10, premium: 500, enterprise: 100,
 };
 
-const knownKeyOrder: string[] = Array.from(new Set([
-  'financial_highlights', 'strategic_moves_and_corporate_actions',
-  'segment_wise_performance', 'innovation', 'finsight_insight',
-  'forward_looking_statements', 'risks_and_threats', 'tone_of_management',
-  'valuation_metrics', 'peer_comparison', 'dividend_payout_ratio',
-  'dividend_yield', 'historical_trends', 'business_overview',
-  'market_presence', 'financial_performance', 'ipo_details',
-  'RISK_ASSESSMENT', 'COMPANY_NAME', 'EDUCATIONAL_HINTS',
-  'MARKET_CONTEXT', 'TECHNICAL_SETUP',
-  'Geopolitical Snapshot', 'India Linkages', 'Impact on Indian Markets',
-  'Sector & Stock Read-through', 'Risks & Cautions', 'Finsight-Insight',
-  'Tariff Details', 'India Exposure Map', 'Winners vs Losers (Sector/Stocks)',
-  'Trade Measure Snapshot', 'India Trade Linkages', 'Company Name',
-  'Event Snapshot', 'Peer & Value Chain Read-through', 'Policy Snapshot',
-  'Macro & Fiscal Math', 'Beneficiary Map (Sector/Stocks)',
-  'Execution Risks & Cautions', 'Exposure Map (India)',
-  'Spillover & Contagion', 'Cross-Asset Read-through', 'Dividend Snapshot',
-  'Trend & Sustainability', 'Relative Yield & Peers', 'whatsapp_forwarded_tips',
-  'Claim Summary', 'Verification Status', 'Source Reliability',
-  'Official Cross-Checks', 'Insight Based on Verified News',
-  'Data Snapshot', 'Signal Interpretation', 'Summary', 'Relevance to India',
-]));
-
-const iconMap: Record<string, string> = {
-  finsight_insight: '💡', financial_highlights: '📊',
-  forward_looking_statements: '🔮', tone_of_management: '🎭',
-  risks_and_threats: '⚠', strategic_moves_and_corporate_actions: '🧭',
-  segment_wise_performance: '🧩', innovation: '🧪',
-  valuation_metrics: '📈', peer_comparison: '🤝',
-  dividend_payout_ratio: '💸', dividend_yield: '📈',
-  historical_trends: '📉', business_overview: '🏢',
-  market_presence: '🗺', financial_performance: '💼',
-  ipo_details: '📝', RISK_ASSESSMENT: '🛡', COMPANY_NAME: '🏢',
-  EDUCATIONAL_HINTS: '📘', MARKET_CONTEXT: '🌐', TECHNICAL_SETUP: '🛠',
-  'Geopolitical Snapshot': '🌍', 'India Linkages': '🇮🇳',
-  'Impact on Indian Markets': '📈', 'Sector & Stock Read-through': '🔗',
-  'Risks & Cautions': '⚠', 'Finsight-Insight': '💡',
-  'Tariff Details': '🧾', 'India Exposure Map': '🗺',
-  'Winners vs Losers (Sector/Stocks)': '🏆', 'Trade Measure Snapshot': '📦',
-  'India Trade Linkages': '🔗', 'Company Name': '🏢',
-  'Event Snapshot': '📋', 'Peer & Value Chain Read-through': '🔗',
-  'Policy Snapshot': '📜', 'Macro & Fiscal Math': '🧮',
-  'Beneficiary Map (Sector/Stocks)': '🗺', 'Execution Risks & Cautions': '⚠',
-  'Exposure Map (India)': '🗺', 'Spillover & Contagion': '🌊',
-  'Cross-Asset Read-through': '🔗', 'Dividend Snapshot': '💰',
-  'Trend & Sustainability': '📈', 'Relative Yield & Peers': '📊',
-  whatsapp_forwarded_tips: '📨', 'Claim Summary': '🧾',
-  'Verification Status': '✅', 'Source Reliability': '🔎',
-  'Official Cross-Checks': '✔', 'Insight Based on Verified News': '📰',
-  'Data Snapshot': '🧮', 'Signal Interpretation': '📶',
-  Summary: '📝', 'Relevance to India': '🇮🇳',
-};
-
 // ── Helpers ────────────────────────────────────────────────────────────────
-function getIconForKey(key: string) { return iconMap[key] ?? '📄'; }
-
-function prettifyLabel(key: string): string {
-  if (/\s/.test(key))
-    return key.toLowerCase().replace(/(^|[\s])([a-z])/g, m => m.toUpperCase());
-  return key.replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .toLowerCase().replace(/(^|[\s])([a-z])/g, m => m.toUpperCase());
-}
-
 function getUserId(): string | null {
-  return typeof window !== 'undefined' ? localStorage.getItem('finsight_user_id') : null;
+  return typeof window !== 'undefined'
+    ? (localStorage.getItem('finsight_user_id') ?? localStorage.getItem('user_id'))
+    : null;
 }
+
 // ── Toast component ────────────────────────────────────────────────────────
 function ToastBanner({ toasts, dismiss }: { toasts: Toast[]; dismiss: (id: number) => void }) {
   if (!toasts.length) return null;
@@ -185,7 +125,6 @@ export default function DashboardPage() {
   // UI state
   const [showCarouselModal, setShowCarouselModal] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('overview');
-  const [selectedAnalysis, setSelectedAnalysis] = useState<any>(null);
   const [darkMode, setDarkMode] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastCounter = useRef(0);
@@ -223,41 +162,29 @@ export default function DashboardPage() {
     document.documentElement.classList.toggle('dark', next);
   };
 
-  // Handlers
-  const handleDownloadAnalysis = async (analysis: any) => {
-    try {
-      await PDFGenerator.downloadPDF(analysis);
-      addToast('success', 'PDF downloaded successfully.');
-    } catch (error) {
-      addToast('error', `Failed to download PDF: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('finsight_user_id');
+    localStorage.removeItem('user_id');
+    document.cookie = 'finsight_user_id=; path=/; max-age=0';
+    window.location.href = '/login';
   };
-
-const handleLogout = () => {
-  localStorage.removeItem('finsight_user_id');
-  document.cookie = 'finsight_user_id=; path=/; max-age=0';
-  window.location.href = '/login';
-};
 
   // Tier / slots
   const tierRaw = userProfile?.subscription_tier ?? userTier ?? 'free';
-const tier = (typeof tierRaw === 'number'
-  ? { 1: 'free', 2: 'basic', 3: 'premium', 4: 'enterprise' }[tierRaw] ?? 'free'
-  : String(tierRaw)
-).toLowerCase();
+  const tier = (typeof tierRaw === 'number'
+    ? ({ 1: 'free', 2: 'basic', 3: 'premium', 4: 'enterprise' } as Record<number, string>)[tierRaw] ?? 'free'
+    : String(tierRaw)
+  ).toLowerCase();
   const maxSlots = TIER_MAX_SLOTS[tier] ?? 10;
   const usedSlots = watchlist.length;
   const availableSlots = Math.max(0, maxSlots - usedSlots);
   const isOverLimit = usedSlots > maxSlots;
 
-  // Fallback email display
   const displayName = profileLoading
     ? 'Welcome back!'
     : userProfile?.first_name
       ? `Welcome back, ${userProfile.first_name}!`
-      : userId
-        ? `Welcome back!`
-        : 'Welcome back!';
+      : 'Welcome back!';
 
   // Not logged in
   if (!userId) {
@@ -334,8 +261,8 @@ const tier = (typeof tierRaw === 'number'
               {/* Stats */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
                 {[
-                  { label: 'Stocks Tracked', value: watchlist.filter(i => i.type === 'stock').length, icon: TrendingUp, color: 'blue' },
-                  { label: 'Current Plan',   value: tier.toUpperCase(), icon: Eye,      color: 'green' },
+                  { label: 'Stocks Tracked',    value: watchlist.filter(i => i.type === 'stock').length, icon: TrendingUp, color: 'blue' },
+                  { label: 'Current Plan',       value: tier.toUpperCase(), icon: Eye, color: 'green' },
                   { label: 'Available Slots',
                     value: availableSlots,
                     sub: <span className={isOverLimit ? 'text-red-500 dark:text-red-400' : ''}>
@@ -480,118 +407,12 @@ const tier = (typeof tierRaw === 'number'
                   View, search, and manage your document analysis results. Download reports and track your analysis progress.
                 </p>
               </div>
-              <OCRAnalysisHistory
-                onAnalysisSelect={(analysis) => {
-                  console.log('Selected analysis:', analysis?.id);
-                  setSelectedAnalysis(analysis);
-                }}
-              />
+              <OCRAnalysisHistory />
             </div>
           )}
 
         </div>
       </div>
-
-      {/* Analysis Details Modal */}
-      {selectedAnalysis && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Analysis Details</h3>
-                <div className="flex items-center space-x-2">
-                  <Button onClick={() => handleDownloadAnalysis(selectedAnalysis)}
-                    className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white">
-                    <Download className="w-4 h-4" /><span>Download PDF</span>
-                  </Button>
-                  <button onClick={() => setSelectedAnalysis(null)}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              </div>
-
-              {selectedAnalysis.analysis_data && (
-                <div className="space-y-6">
-                  {selectedAnalysis.analysis_data['Company Name'] && (
-                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900 rounded-full flex items-center justify-center">
-                          <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                          </svg>
-                        </div>
-                        <div>
-                          <h3 className="text-xl font-bold text-blue-900 dark:text-blue-100">
-                            {selectedAnalysis.analysis_data['Company Name']}
-                          </h3>
-                          <p className="text-sm text-blue-700 dark:text-blue-300">Company Analysis Report</p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Key Insights</h4>
-                    <div className="space-y-4">
-                      {(() => {
-                        const excluded = new Set([
-                          'company', 'document_type', 'ir_subtype', 'processing_time',
-                          'cached', 'timestamp', 'document_id',
-                          'category', 'Category', 'news_category', 'newsCategory',
-                        ]);
-                        const data = selectedAnalysis.analysis_data ?? {};
-                        const entries = Object.entries(data).filter(([k, v]) => v != null && v !== '' && !excluded.has(k));
-                        const byKey = Object.fromEntries(entries);
-                        const ordered = knownKeyOrder.filter(k => k in byKey);
-                        const remaining = entries.map(([k]) => k)
-                          .filter(k => !ordered.includes(k))
-                          .sort((a, b) => prettifyLabel(a).localeCompare(prettifyLabel(b)));
-
-                        const renderCard = (key: string) => (
-                          <div key={key} className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                            <h5 className="font-semibold text-gray-900 dark:text-white mb-2">
-                              {getIconForKey(key)} {prettifyLabel(key)}
-                            </h5>
-                            <p className="text-gray-700 dark:text-gray-300 leading-relaxed">
-                              {typeof byKey[key] === 'string' ? byKey[key] : JSON.stringify(byKey[key], null, 2)}
-                            </p>
-                          </div>
-                        );
-                        return <>{ordered.map(renderCard)}{remaining.map(renderCard)}</>;
-                      })()}
-                    </div>
-                  </div>
-
-                  {selectedAnalysis.analysis_data['Risks & Cautions'] && (
-                    <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-6 border border-red-200 dark:border-red-800">
-                      <h4 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-4 flex items-center">
-                        <svg className="w-5 h-5 text-red-600 dark:text-red-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
-                        </svg>
-                        Risks & Cautions
-                      </h4>
-                      <div className="bg-white dark:bg-gray-800 p-4 rounded-lg">
-                        <p className="text-red-800 dark:text-red-200 leading-relaxed">
-                          {selectedAnalysis.analysis_data['Risks & Cautions']}
-                        </p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-6 p-4">
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  <strong>Disclaimer:</strong> FinSight is an educational assistant, not a SEBI-registered investment advisor. We never execute trades. Every suggestion should be evaluated against your risk profile.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <CarouselModal isOpen={showCarouselModal} onClose={() => setShowCarouselModal(false)} darkMode={darkMode} />
     </div>

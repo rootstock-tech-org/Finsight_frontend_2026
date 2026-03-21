@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ocrApi, DocumentAnalysisRequest } from '@/lib/services/ocr-api';
 
-const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://127.0.0.1:8000';
+const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://127.0.0.1:8001';
 
 function getUserId(request: NextRequest): string | null {
   const auth = request.headers.get('authorization');
@@ -46,42 +46,28 @@ export async function POST(request: NextRequest) {
     const userId = getUserId(request);
     if (!userId) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
-    // ── Quota check via FastAPI ──────────────────────────────────────────────
-    let quota = null;
+    // ── Quota check via FastAPI (dev bypass if endpoint missing) ─────────────
     try {
       const quotaRes = await fetch(`${FASTAPI}/user_profiles/${userId}/quota`, {
         headers: fapiHeaders(userId),
       });
-      if (!quotaRes.ok) {
-        const err = await quotaRes.text().catch(() => 'unknown');
-        console.warn('FastAPI quota check failed (dev bypass):', quotaRes.status, err);
-        quota = { used: 0, limit: 9999, tier: 1 };
+      if (quotaRes.ok) {
+        const quota = await quotaRes.json();
+        if (quota.used >= quota.limit) {
+          return NextResponse.json(
+            {
+              error: 'Monthly analysis quota reached for your plan.',
+              details: `Limit: ${quota.limit} analyses/month. Upgrade to increase your limit.`,
+              tier: quota.tier,
+            },
+            { status: 403 }
+          );
+        }
       } else {
-        quota = await quotaRes.json();
-      }
-      if (quota.used >= quota.limit) {
-        return NextResponse.json(
-          {
-            error: 'Monthly analysis quota reached for your plan.',
-            details: `Limit: ${quota.limit} analyses/month. Upgrade to increase your limit.`,
-            tier: quota.tier,
-          },
-          { status: 403 }
-        );
+        console.warn('FastAPI quota check failed (dev bypass):', quotaRes.status, await quotaRes.text().catch(() => ''));
       }
     } catch (fetchError) {
       console.warn('FastAPI quota endpoint unreachable (dev bypass):', fetchError);
-      quota = { used: 0, limit: 9999, tier: 1 };
-    }
-
-    // Increment usage: best-effort, log errors but continue
-    try {
-      await fetch(`${FASTAPI}/user_profiles/${userId}/quota/increment`, {
-        method: 'POST',
-        headers: fapiHeaders(userId),
-      });
-    } catch (err) {
-      console.warn('Failed to increment quota, continuing:', err);
     }
 
     // ── Create initial record in FastAPI ─────────────────────────────────────
@@ -90,31 +76,18 @@ export async function POST(request: NextRequest) {
       headers: fapiHeaders(userId),
       body: JSON.stringify({
         user_id: userId,
-        file_name: file.name,
-        file_size: file.size,
-        file_type: file.type.split('/')[1],
-        company_name: companyName || null,
+        doc_name: file.name,
+        doc_type: file.type.includes('pdf') ? 'AR' : 'CHART',
         status: 'processing',
-        metadata: {
-          original_name: file.name,
-          upload_timestamp: new Date().toISOString(),
-          file_type: file.type,
-        },
+        summary: `Processing ${file.name}...`,
+        result: {},
       }),
     });
 
     let analysisRecord: any = {
       id: `local-${Date.now()}`,
       user_id: userId,
-      file_name: file.name,
-      file_size: file.size,
-      file_type: file.type.split('/')[1],
       status: 'processing',
-      metadata: {
-        original_name: file.name,
-        upload_timestamp: new Date().toISOString(),
-        file_type: file.type,
-      },
     };
 
     const backendRecordCreated = createRes.ok;
@@ -124,6 +97,7 @@ export async function POST(request: NextRequest) {
       console.warn('Failed to create analysis record (dev bypass):', createRes.status, err);
     } else {
       analysisRecord = await createRes.json();
+      console.log('✅ Record created:', analysisRecord.id, 'status:', analysisRecord.status);
     }
 
     // ── Run OCR ───────────────────────────────────────────────────────────────
@@ -141,15 +115,15 @@ export async function POST(request: NextRequest) {
         analysisResult = await ocrApi.analyzeDocumentAsync(ocrRequest);
 
         if (analysisResult.document_id && backendRecordCreated) {
-          await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}`, {
+          await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`, {
             method: 'PATCH',
             headers: fapiHeaders(userId),
             body: JSON.stringify({
-              document_id: analysisResult.document_id,
               status: 'processing',
-              metadata: { ...analysisRecord.metadata, processing_mode: 'async' },
+              summary: `Async processing started for ${file.name}`,
+              result: { document_id: analysisResult.document_id },
             }),
-          }).catch(() => {});
+          }).catch((e) => console.warn('PATCH async failed:', e));
         }
       } else {
         analysisResult = await ocrApi.analyzeDocument(ocrRequest);
@@ -157,29 +131,44 @@ export async function POST(request: NextRequest) {
         if (analysisResult.status === 'completed' && analysisResult.analysis) {
           const cn = extractCompanyName(analysisResult.analysis);
           if (backendRecordCreated) {
-            await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}`, {
+            const patchUrl = `${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`;
+            const patchBody = {
+              status: 'completed',
+              summary:
+                (analysisResult.analysis as any)?.summary ||
+                (analysisResult.analysis as any)?.['Summary'] ||
+                (analysisResult.analysis as any)?.['Finsight-Insight'] ||
+                (analysisResult.analysis as any)?.insights?.general_insights?.summary ||
+                cn ||
+                'Analysis completed',
+              result: analysisResult.analysis || {},
+            };
+            console.log('🔧 PATCH URL:', patchUrl);
+            console.log('🔧 PATCH body keys:', Object.keys(patchBody));
+            console.log('🔧 analysisRecord.id:', analysisRecord.id);
+            const patchRes = await fetch(patchUrl, {
               method: 'PATCH',
               headers: fapiHeaders(userId),
-              body: JSON.stringify({
-                status: 'completed',
-                company_name: cn ?? analysisRecord.company_name,
-                analysis_data: analysisResult.analysis,
-                completed_at: new Date().toISOString(),
-                metadata: { ...analysisRecord.metadata, processing_mode: 'sync' },
-              }),
-            }).catch(() => {});
+              body: JSON.stringify(patchBody),
+            });
+            const patchResText = await patchRes.text().catch(() => '');
+            if (!patchRes.ok) {
+              console.error('❌ PATCH completed failed:', patchRes.status, patchResText);
+            } else {
+              console.log('✅ PATCH completed success:', patchRes.status, patchResText.slice(0, 100));
+            }
           }
         } else if (analysisResult.status === 'failed') {
           if (backendRecordCreated) {
-            await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}`, {
+            await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`, {
               method: 'PATCH',
               headers: fapiHeaders(userId),
               body: JSON.stringify({
                 status: 'failed',
-                error_message: analysisResult.error ?? 'Analysis failed',
-                metadata: { ...analysisRecord.metadata, processing_mode: 'sync' },
+                summary: analysisResult.error ?? 'Analysis failed',
+                result: {},
               }),
-            }).catch(() => {});
+            }).catch((e) => console.warn('PATCH failed status error:', e));
           }
         }
       }
@@ -197,14 +186,15 @@ export async function POST(request: NextRequest) {
       console.error('OCR API error:', ocrError);
 
       if (backendRecordCreated) {
-        await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}`, {
+        await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`, {
           method: 'PATCH',
           headers: fapiHeaders(userId),
           body: JSON.stringify({
             status: 'failed',
-            error_message: ocrError instanceof Error ? ocrError.message : 'OCR processing failed',
+            summary: ocrError instanceof Error ? ocrError.message : 'OCR processing failed',
+            result: {},
           }),
-        }).catch(() => {});
+        }).catch((e) => console.warn('PATCH ocrError failed:', e));
       }
 
       return NextResponse.json(
@@ -241,34 +231,38 @@ export async function GET(request: NextRequest) {
       if (!res.ok) return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
       const analysis = await res.json();
 
-      // Poll external status if still processing
-      if (analysis.status === 'processing' && analysis.document_id) {
+      // Poll external status if still processing async
+      if (analysis.status === 'processing' && analysis.result?.document_id) {
         try {
-          const statusResult = await ocrApi.getProcessingStatus(analysis.document_id);
+          const statusResult = await ocrApi.getProcessingStatus(analysis.result.document_id);
 
           if (statusResult.status === 'completed' && statusResult.analysis) {
-            await fetch(`${FASTAPI}/analysis_results/${analysisId}`, {
+            await fetch(`${FASTAPI}/analysis_results/${analysisId}?user_id=${userId}`, {
               method: 'PATCH',
               headers: fapiHeaders(userId),
               body: JSON.stringify({
                 status: 'completed',
-                analysis_data: statusResult.analysis,
-                completed_at: new Date().toISOString(),
+                summary: (statusResult.analysis as any)?.summary || 'Analysis completed',
+                result: statusResult.analysis,
               }),
             }).catch(() => {});
-            return NextResponse.json({ ...analysis, status: 'completed', analysis_data: statusResult.analysis });
+            return NextResponse.json({ ...analysis, status: 'completed', result: statusResult.analysis });
           }
 
           if (statusResult.status === 'failed') {
-            await fetch(`${FASTAPI}/analysis_results/${analysisId}`, {
+            await fetch(`${FASTAPI}/analysis_results/${analysisId}?user_id=${userId}`, {
               method: 'PATCH',
               headers: fapiHeaders(userId),
-              body: JSON.stringify({ status: 'failed', error_message: statusResult.error }),
+              body: JSON.stringify({
+                status: 'failed',
+                summary: statusResult.error ?? 'Analysis failed',
+                result: {},
+              }),
             }).catch(() => {});
-            return NextResponse.json({ ...analysis, status: 'failed', error_message: statusResult.error });
+            return NextResponse.json({ ...analysis, status: 'failed' });
           }
         } catch {
-          // fall through to return current analysis
+          // fall through to return current db status
         }
       }
 

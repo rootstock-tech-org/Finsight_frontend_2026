@@ -1,6 +1,7 @@
 /**
  * PDF Generation Utility
- * Generates PDF reports for analysis results
+ * Handles both FastAPI 'result' field and legacy 'analysis_data' field.
+ * Also handles Groq's nested { Results: { ... } } response shape.
  */
 
 export interface AnalysisData {
@@ -8,196 +9,174 @@ export interface AnalysisData {
   file_name: string;
   company_name: string | null;
   document_type: string | null;
-  analysis_data: any;
+  analysis_data: any;   // populated by OCRAnalysisHistory before calling
   created_at: string;
   completed_at: string | null;
 }
 
-export interface PDFReportData {
-  title: string;
-  company: string;
-  documentType: string;
-  date: string;
-  keyInsights: string[];
-  eventSnapshot: string;
-  finsightInsight: string;
-  marketImpact: string;
-  peerValueChain: string;
-  risksCautions: string;
-}
-
 export class PDFGenerator {
-  /**
-   * Generate PDF from analysis data
-   */
+
   static async generateAnalysisPDF(analysis: AnalysisData): Promise<Blob> {
-    // Dynamic import to avoid SSR issues
     const { jsPDF } = await import('jspdf');
-    
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
+
+    const doc        = new jsPDF();
+    const pageWidth  = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    let yPosition = 20;
-    const margin = 20;
-    const contentWidth = pageWidth - (margin * 2);
-    
-    // Helper function to add text with word wrapping
-    const addText = (text: string, fontSize: number = 12, isBold: boolean = false, color: string = '#000000') => {
+    let yPos         = 20;
+    const margin     = 20;
+    const contentW   = pageWidth - margin * 2;
+
+    const addText = (text: string, fontSize = 12, bold = false, color = '#000000') => {
       doc.setFontSize(fontSize);
-      doc.setFont('helvetica', isBold ? 'bold' : 'normal');
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
       doc.setTextColor(color);
-      
-      const lines = doc.splitTextToSize(text, contentWidth);
+      const lines      = doc.splitTextToSize(text, contentW);
       const lineHeight = fontSize * 0.4;
-      
-      // Check if we need a new page
-      if (yPosition + (lines.length * lineHeight) > pageHeight - margin) {
+      if (yPos + lines.length * lineHeight > pageHeight - margin) {
         doc.addPage();
-        yPosition = 20;
+        yPos = 20;
       }
-      
-      lines.forEach((line: string) => {
-        doc.text(line, margin, yPosition);
-        yPosition += lineHeight;
-      });
-      
-      yPosition += 5; // Add some spacing
+      lines.forEach((line: string) => { doc.text(line, margin, yPos); yPos += lineHeight; });
+      yPos += 5;
     };
-    
-    // Helper function to add a section header
-    const addSectionHeader = (title: string) => {
-      yPosition += 10;
-      addText(title, 14, true, '#2563eb');
-      yPosition += 5;
-    };
-    
-    // Helper function to check if content is valid (not Unknown or empty)
-    const isValidContent = (content: any): boolean => {
-      if (!content) return false;
-      if (typeof content === 'string') {
-        return content.trim() !== '' && 
-               !content.toLowerCase().includes('unknown') && 
-               content.trim() !== 'N/A';
-      }
-      if (Array.isArray(content)) {
-        return content.length > 0 && content.some(item => 
-          typeof item === 'string' && 
-          item.trim() !== '' && 
-          !item.toLowerCase().includes('unknown')
-        );
-      }
+
+    const addSection = (title: string) => { yPos += 10; addText(title, 14, true, '#2563eb'); yPos += 5; };
+
+    const isValid = (v: any): boolean => {
+      if (!v) return false;
+      if (typeof v === 'string') return v.trim() !== '' && !v.toLowerCase().includes('unknown') && v.trim() !== 'N/A';
+      if (typeof v === 'object' && !Array.isArray(v)) return Object.keys(v).length > 0;
+      if (Array.isArray(v)) return v.length > 0 && v.some(i => typeof i === 'string' && i.trim() !== '');
       return true;
     };
-    
-    // Header
+
+    // ── Normalise the data object ─────────────────────────────────────────
+    // FastAPI wraps Groq output as: { result: { Results: { TECHNICAL SETUP: ... } } }
+    // or sometimes:                 { result: { TECHNICAL SETUP: ... } }
+    let raw = analysis.analysis_data || {};
+
+    // Unwrap 'Results' key if present (Groq chart analysis shape)
+    if (raw.Results && typeof raw.Results === 'object') {
+      raw = raw.Results;
+    }
+
+    // ── Header ────────────────────────────────────────────────────────────
     addText('FinSight Analysis Report', 20, true, '#1e40af');
-    
-    // Add company name prominently if available
-    const companyName = analysis.analysis_data?.['Company Name'] || analysis.company_name;
-    if (companyName) {
-      addText(companyName, 16, true, '#1f2937');
-    }
-    
+
+    const companyName =
+      raw?.['Company Name'] ||
+      raw?.company_name ||
+      raw?.company ||
+      analysis.company_name ||
+      null;
+
+    if (companyName) addText(companyName, 16, true, '#1f2937');
     addText(`Generated on: ${new Date().toLocaleDateString()}`, 10, false, '#6b7280');
-    yPosition += 10;
-    
-    // Document Information
-    addSectionHeader('Document Information');
-    
-    // Only show company name
-    if (companyName && isValidContent(companyName)) {
-      addText(`Company: ${companyName}`, 12);
-    }
-    
-    // Analysis Data
-    if (analysis.analysis_data) {
-      const data = analysis.analysis_data;
+    yPos += 10;
 
-      // Helpers to find content across naming variants
-      const norm = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
-      const findValue = (aliases: string[]): any => {
-        const keys = Object.keys(data);
-        const aliasSet = new Set(aliases.map(norm));
-        for (const key of keys) {
-          if (aliasSet.has(norm(key))) return data[key];
-        }
-        return undefined;
-      };
+    addSection('Document Information');
+    if (companyName && isValid(companyName)) addText(`Company: ${companyName}`, 12);
+    if (analysis.document_type) addText(`Document Type: ${analysis.document_type}`, 12);
+    if (analysis.file_name) addText(`File: ${analysis.file_name}`, 12);
 
-      // Keep track of printed keys to avoid duplicates
-      const printedKeys = new Set<string>();
-      const markPrinted = (aliases: string[]) => aliases.forEach(a => printedKeys.add(norm(a)));
+    // ── Named sections in preferred order ────────────────────────────────
+    const norm = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      // Ordered sections with aliases to support multiple providers/key styles
-      const sections: Array<{ title: string; aliases: string[] }> = [
-        { title: 'Key Insights', aliases: ['Key Insights', 'key_insights', 'insights', 'Highlights'] },
-        { title: 'Event Snapshot', aliases: ['Event Snapshot', 'event_snapshot', 'Event Overview'] },
-        { title: 'Finsight Insight', aliases: ['Finsight Insight', 'Finsight-Insight', 'finsight_insight'] },
-        { title: 'Impact on Indian Markets', aliases: ['Impact on Indian Markets', 'impact_on_indian_markets'] },
-        { title: 'Peer & Value Chain Read-through', aliases: ['Peer & Value Chain Read-through', 'peer_value_chain_read_through', 'peer & value chain read-through'] },
-        { title: 'Winners vs Losers (Sector/Stocks)', aliases: ['Winners vs Losers (Sector/Stocks)', 'winners vs losers (sector/stocks)', 'winners_vs_losers', 'Winners Vs Losers (sector/stocks)'] },
-        { title: 'Trade Measure Snapshot', aliases: ['Trade Measure Snapshot', 'trade_measure_snapshot'] },
-        { title: 'India Trade Linkages', aliases: ['India Trade Linkages', 'india_trade_linkages'] },
-        { title: 'Data Snapshot', aliases: ['Data Snapshot', 'data_snapshot'] },
-        { title: 'Signal Interpretation', aliases: ['Signal Interpretation', 'signal_interpretation'] },
-        { title: 'Summary', aliases: ['Summary', 'summary'] },
-        { title: 'Risks & Cautions', aliases: ['Risks & Cautions', 'risks & cautions', 'risks_and_cautions', 'risks', 'cautions'] },
-      ];
+    const SECTIONS: Array<{ title: string; aliases: string[] }> = [
+      { title: 'Technical Setup',         aliases: ['TECHNICAL SETUP', 'technical_setup', 'technical setup'] },
+      { title: 'Risk Assessment',         aliases: ['RISK ASSESSMENT', 'risk_assessment', 'risk assessment'] },
+      { title: 'Finsight Insights',       aliases: ['FINSIGHT_INSIGHTS', 'finsight_insights', 'FINSIGHT INSIGHTS', 'Finsight-Insight', 'finsight_insight'] },
+      { title: 'Educational Hints',       aliases: ['EDUCATIONAL_HINTS', 'educational_hints', 'Educational Hints'] },
+      { title: 'Market Context',          aliases: ['MARKET_CONTEXT', 'market_context', 'Market Context'] },
+      { title: 'Financial Highlights',    aliases: ['FINANCIAL HIGHLIGHTS', 'financial_highlights'] },
+      { title: 'Forward Looking',         aliases: ['FORWARD LOOKING STATEMENTS', 'forward_looking_statements'] },
+      { title: 'Risks & Threats',         aliases: ['RISKS AND THREATS', 'risks_and_threats', 'Risks & Cautions', 'risks_and_cautions'] },
+      { title: 'Tone of Management',      aliases: ['TONE OF MANAGEMENT', 'tone_of_management'] },
+      { title: 'Finsight Insight',        aliases: ['FINSIGHT INSIGHT', 'finsight_insight'] },
+      { title: 'Key Insights',            aliases: ['Key Insights', 'key_insights', 'insights'] },
+      { title: 'Summary',                 aliases: ['Summary', 'summary'] },
+      { title: 'Event Snapshot',          aliases: ['Event Snapshot', 'event_snapshot'] },
+      { title: 'Impact on Indian Markets',aliases: ['Impact on Indian Markets', 'impact_on_indian_markets'] },
+      { title: 'Valuation Metrics',       aliases: ['VALUATION METRICS', 'valuation_metrics'] },
+      { title: 'Peer Comparison',         aliases: ['PEER COMPARISON', 'peer_comparison'] },
+      { title: 'Business Overview',       aliases: ['BUSINESS OVERVIEW', 'business_overview'] },
+      { title: 'IPO Details',             aliases: ['IPO DETAILS', 'ipo_details'] },
+    ];
 
-      for (const section of sections) {
-        const val = findValue(section.aliases);
-        if (isValidContent(val)) {
-          addSectionHeader(section.title);
-          if (Array.isArray(val)) {
-            val.forEach((item: any, idx: number) => {
-              if (isValidContent(item)) addText(`${idx + 1}. ${String(item)}`, 11);
-            });
+    const printedKeys = new Set<string>();
+
+    const renderValue = (v: any) => {
+      if (typeof v === 'string') {
+        addText(v, 11);
+      } else if (Array.isArray(v)) {
+        v.forEach((item, i) => {
+          if (typeof item === 'string' && isValid(item)) addText(`${i + 1}. ${item}`, 11);
+          else if (typeof item === 'object' && item) addText(`${i + 1}. ${JSON.stringify(item)}`, 10);
+        });
+      } else if (typeof v === 'object' && v !== null) {
+        // Render nested object fields
+        Object.entries(v).forEach(([subKey, subVal]) => {
+          if (!isValid(subVal)) return;
+          addText(`${subKey}:`, 11, true);
+          if (Array.isArray(subVal)) {
+            (subVal as any[]).forEach((item, i) => addText(`  ${i + 1}. ${String(item)}`, 10));
           } else {
-            addText(String(val), 11);
+            addText(`  ${String(subVal)}`, 10);
           }
-          markPrinted(section.aliases);
-        }
+        });
       }
+    };
 
-      // Print any remaining non-empty fields as a generic Key Insights list
-      try {
-        const excluded = new Set(['company','document_type','ir_subtype','processing_time','cached','timestamp','document_id','category','news_category','newsCategory']);
-        const remainingEntries = Object.entries(data).filter(([k, v]) => !printedKeys.has(norm(k)) && !excluded.has(k) && isValidContent(v));
-        if (remainingEntries.length > 0) {
-          addSectionHeader('Additional Insights');
-          for (const [k, v] of remainingEntries) {
-            const title = k.replace(/_/g, ' ').replace(/\s+/g, ' ').replace(/(^|\s)\w/g, (m) => m.toUpperCase());
-            addText(`${title}:`, 12, true);
-            if (Array.isArray(v)) {
-              v.forEach((item: any, idx: number) => isValidContent(item) && addText(`- ${String(item)}`, 11));
-            } else {
-              addText(String(v), 11);
-            }
-          }
-        }
-      } catch (_) {}
+    for (const section of SECTIONS) {
+      const matchKey = Object.keys(raw).find(k => section.aliases.map(norm).includes(norm(k)));
+      if (!matchKey) continue;
+      const val = raw[matchKey];
+      if (!isValid(val)) continue;
+      addSection(section.title);
+      renderValue(val);
+      section.aliases.forEach(a => printedKeys.add(norm(a)));
+      printedKeys.add(norm(matchKey));
     }
-    
-    // Footer with disclaimer
-    yPosition += 20;
+
+    // ── Remaining fields ──────────────────────────────────────────────────
+    const excluded = new Set(['company','company_name','document_type','ir_subtype',
+      'processing_time','cached','timestamp','document_id','category','ginni_version',
+      'analysis_type','model','_detection','content_type','route','ocr_text_length',
+      'text_length','news_category','newsCategory']);
+
+    const remaining = Object.entries(raw).filter(([k, v]) =>
+      !printedKeys.has(norm(k)) && !excluded.has(k.toLowerCase()) && isValid(v)
+    );
+
+    if (remaining.length > 0) {
+      addSection('Additional Insights');
+      for (const [k, v] of remaining) {
+        const title = k.replace(/_/g, ' ').replace(/([A-Z])/g, ' $1').trim()
+          .replace(/(^|\s)\w/g, m => m.toUpperCase());
+        addText(`${title}:`, 12, true);
+        renderValue(v);
+      }
+    }
+
+    // ── Disclaimer ────────────────────────────────────────────────────────
+    yPos += 20;
     addText('Disclaimer', 12, true, '#333333');
-    addText('FinSight is an educational assistant, not a SEBI-registered investment advisor. We never execute trades. Every suggestion should be evaluated against your risk profile.', 10, false, '#333333');
-    
-    // Generate PDF blob
+    addText(
+      'FinSight is an educational assistant, not a SEBI-registered investment advisor. ' +
+      'We never execute trades. Every suggestion should be evaluated against your risk profile.',
+      10, false, '#333333'
+    );
+
     return doc.output('blob');
   }
-  
-  /**
-   * Download PDF file
-   */
+
   static async downloadPDF(analysis: AnalysisData): Promise<void> {
     try {
       const pdfBlob = await this.generateAnalysisPDF(analysis);
-      const url = URL.createObjectURL(pdfBlob);
-      
+      const url  = URL.createObjectURL(pdfBlob);
       const link = document.createElement('a');
-      link.href = url;
-      link.download = `FinSight_Analysis_${analysis.file_name.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      link.href  = url;
+      link.download = `FinSight_Analysis_${(analysis.file_name || 'report').replace(/\.[^/.]+$/, '')}_${new Date().toISOString().split('T')[0]}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);

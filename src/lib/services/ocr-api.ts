@@ -169,7 +169,7 @@ export class OCRApiService {
   private timeout: number;
 
   constructor(config?: { baseUrl?: string; timeout?: number }) {
-    this.baseUrl = config?.baseUrl || 'https://e9cwq4w7punvx7-1002.proxy.runpod.net';
+    this.baseUrl = config?.baseUrl || 'http://127.0.0.1:1002';
     this.timeout = config?.timeout || 300000; // 5 minutes for document processing
   }
 

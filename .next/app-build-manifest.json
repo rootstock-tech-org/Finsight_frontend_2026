@@ -1,25 +1,30 @@
 {
   "pages": {
-    "/api/stock/[symbol]/price/route": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/api/stock/[symbol]/price/route.js"
-    ],
     "/layout": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/stocks/page": [
+    "/dashboard/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/stocks/page.js"
+      "static/chunks/app/dashboard/page.js"
     ],
-    "/api/external-stocks/price/[symbol]/route": [
+    "/login/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/api/external-stocks/price/[symbol]/route.js"
+      "static/chunks/app/login/page.js"
+    ],
+    "/api/ocr/upload/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/ocr/upload/route.js"
+    ],
+    "/api/ocr/history/route": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/api/ocr/history/route.js"
     ]
   }
 }
