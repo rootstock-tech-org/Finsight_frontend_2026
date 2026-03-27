@@ -11,7 +11,7 @@ const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL ?? '';
 async function sendOtp(email: string) {
   const res = await fetch(`${FASTAPI}/auth/send-otp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ email }),
   });
   const data = await res.json();
@@ -21,7 +21,7 @@ async function sendOtp(email: string) {
 async function verifyOtp(email: string, otp: string): Promise<string> {
   const res = await fetch(`${FASTAPI}/auth/verify-otp`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ email, otp }),
   });
   const data = await res.json();
@@ -33,7 +33,7 @@ async function verifyOtp(email: string, otp: string): Promise<string> {
 async function updatePassword(resetToken: string, newPassword: string) {
   const res = await fetch(`${FASTAPI}/auth/update-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ reset_token: resetToken, new_password: newPassword }),
   });
   const data = await res.json();

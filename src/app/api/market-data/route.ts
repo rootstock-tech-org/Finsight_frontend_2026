@@ -5,7 +5,11 @@ const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL ?? '';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const res = await fetch(`${FASTAPI}/news?${searchParams.toString()}`);
+    const res = await fetch(`${FASTAPI}/news?${searchParams.toString()}`, {
+      headers: {
+        "ngrok-skip-browser-warning": "true",
+      },
+    });
     if (!res.ok) return NextResponse.json({ error: 'Failed to fetch news' }, { status: 500 });
     const data = await res.json();
     return NextResponse.json({
@@ -27,7 +31,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch(`${FASTAPI}/news`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', "ngrok-skip-browser-warning": "true" },
       body: JSON.stringify(body),
     });
 

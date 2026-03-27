@@ -28,12 +28,16 @@ export default function Header({ onMenuToggle, isMenuOpen }: HeaderProps) {
     if (!userId) return;
 
     fetch(`${FASTAPI}/users/${userId}`, {
-      headers: { Authorization: `Bearer ${userId}` },
-    })
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { if (data) setUserProfile(data); })
-      .catch(() => {});
-  }, [user?.id]);
+  method: "GET",
+  headers: {
+    "Authorization": `Bearer ${userId}`,
+    "ngrok-skip-browser-warning": "true"
+  }
+})
+  .then(r => r.ok ? r.json() : null)
+  .then(data => { if (data) setUserProfile(data); })
+  .catch(() => {});
+}, [user?.id]);
 
   const handleLogout = async () => {
     try { await logout(); } catch (e) { console.error('Logout error:', e); }

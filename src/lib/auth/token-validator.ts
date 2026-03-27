@@ -11,13 +11,16 @@ export interface TokenValidationResult {
 export class TokenValidator {
   static async validateToken(token: string): Promise<TokenValidationResult> {
     try {
-      if (!token) return { isValid: false, error: 'Token is required' };
+if (!token) return { isValid: false, error: 'Token is required' };
 
-      const res = await fetch(`${FASTAPI}/invitation/tokens/validate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
+const res = await fetch(`${FASTAPI}/invitation/tokens/validate`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true'
+  },
+  body: JSON.stringify({ token }),
+});
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -39,11 +42,14 @@ export class TokenValidator {
 
   static async markTokenAsUsed(token: string): Promise<boolean> {
     try {
-      const res = await fetch(`${FASTAPI}/invitation/tokens/use`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
+const res = await fetch(`${FASTAPI}/invitation/tokens/use`, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': 'true'
+  },
+  body: JSON.stringify({ token }),
+});
       return res.ok;
     } catch {
       return false;
@@ -58,7 +64,10 @@ export class TokenValidator {
     try {
       const res = await fetch(`${FASTAPI}/invitation/tokens`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${userId}` },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ user_id: userId, email, expires_in_hours: expiresInHours }),
       });
       if (!res.ok) return null;

@@ -39,7 +39,12 @@ function authHeaders(userId: string): Record<string, string> {
 
 async function fetchProfile(userId: string): Promise<UserProfile | null> {
   try {
-    const res = await fetch(`${FASTAPI}/users/${userId}`, { headers: authHeaders(userId) });
+    const res = await fetch(`${FASTAPI}/users/${userId}`, { 
+      headers: { 
+        ...authHeaders(userId), 
+        'ngrok-skip-browser-warning': 'true' 
+      }
+    });
     if (!res.ok) return null;
     return res.json();
   } catch { return null; }
@@ -51,7 +56,10 @@ async function updateProfile(
 ): Promise<UserProfile | null> {
   const res = await fetch(`${FASTAPI}/users/${userId}`, {
     method: 'PATCH',
-    headers: authHeaders(userId),
+    headers: { 
+      ...authHeaders(userId), 
+      'ngrok-skip-browser-warning': 'true' 
+    },
     body: JSON.stringify(updates),
   });
   if (!res.ok) {

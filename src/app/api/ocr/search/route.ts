@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // Persist search record to FastAPI (fire-and-forget, don't block response)
     fetch(`${FASTAPI}/search-history`, {
       method: 'POST',
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
       body: JSON.stringify({ user_id: userId, query, results: searchResults }),
     }).catch(() => {}); // non-critical
 
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
 
     const res = await fetch(
       `${FASTAPI}/search-history?user_id=${userId}&page=${page}&limit=${limit}`,
-      { headers: fapiHeaders(userId) }
+      { headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" } }
     );
 
     if (!res.ok) {

@@ -60,7 +60,11 @@ export type StockUpdateCallback = (stocks: StockData[]) => void;
 // ── Helper ────────────────────────────────────────────────────────────────────
 
 async function backendFetch(path: string): Promise<Response> {
-  return fetch(`${BACKEND_URL}${path}`);
+  return fetch(`${BACKEND_URL}${path}`, {
+    headers: {
+      "ngrok-skip-browser-warning": "true",
+    },
+  });
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────

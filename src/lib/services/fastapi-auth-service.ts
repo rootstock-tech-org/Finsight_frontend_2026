@@ -67,6 +67,7 @@ async function apiFetch(path: string, options?: RequestInit): Promise<Response> 
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      "ngrok-skip-browser-warning": "true",  // ← mandatory
       ...(options?.headers || {}),
     },
   });

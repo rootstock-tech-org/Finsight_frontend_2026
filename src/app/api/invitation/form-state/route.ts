@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
 
     const res = await fetch(
       `${FASTAPI}/invitation/form-state?user_id=${userId}&token=${token}`,
-      { headers: fapiHeaders(userId) }
+      { headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" } }
     );
 
     if (!res.ok && res.status !== 404) {
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch(`${FASTAPI}/invitation/form-state`, {
       method: 'POST',
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
       body: JSON.stringify({ user_id: userId, token, form_data, step, completed }),
     });
 
@@ -94,7 +94,7 @@ export async function PUT(request: NextRequest) {
 
     const res = await fetch(`${FASTAPI}/invitation/form-state`, {
       method: 'PUT',
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
       body: JSON.stringify({ user_id: userId, token, ...body }),
     });
 
@@ -123,7 +123,7 @@ export async function DELETE(request: NextRequest) {
 
     const res = await fetch(
       `${FASTAPI}/invitation/form-state?user_id=${userId}&token=${token}`,
-      { method: 'DELETE', headers: fapiHeaders(userId) }
+      { method: 'DELETE', headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" } }
     );
 
     if (!res.ok) {

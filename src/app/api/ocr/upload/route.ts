@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ocrApi, DocumentAnalysisRequest } from '@/lib/services/ocr-api';
 
-const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL || 'http://127.0.0.1:8001';
+const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL || 'https://nonphonetically-nonexistential-isadora.ngrok-free.dev';
 
 function getUserId(request: NextRequest): string | null {
   const auth = request.headers.get('authorization');
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     // ── Quota check via FastAPI (dev bypass if endpoint missing) ─────────────
     try {
       const quotaRes = await fetch(`${FASTAPI}/user_profiles/${userId}/quota`, {
-        headers: fapiHeaders(userId),
+        headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" }
       });
       if (quotaRes.ok) {
         const quota = await quotaRes.json();
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     // ── Create initial record in FastAPI ─────────────────────────────────────
     const createRes = await fetch(`${FASTAPI}/analysis_results/`, {
       method: 'POST',
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
       body: JSON.stringify({
         user_id: userId,
         doc_name: file.name,
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
         if (analysisResult.document_id && backendRecordCreated) {
           await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`, {
             method: 'PATCH',
-            headers: fapiHeaders(userId),
+            headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
             body: JSON.stringify({
               status: 'processing',
               summary: `Async processing started for ${file.name}`,
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
             console.log('🔧 analysisRecord.id:', analysisRecord.id);
             const patchRes = await fetch(patchUrl, {
               method: 'PATCH',
-              headers: fapiHeaders(userId),
+              headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
               body: JSON.stringify(patchBody),
             });
             const patchResText = await patchRes.text().catch(() => '');
@@ -162,7 +162,7 @@ export async function POST(request: NextRequest) {
           if (backendRecordCreated) {
             await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`, {
               method: 'PATCH',
-              headers: fapiHeaders(userId),
+              headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
               body: JSON.stringify({
                 status: 'failed',
                 summary: analysisResult.error ?? 'Analysis failed',
@@ -188,7 +188,7 @@ export async function POST(request: NextRequest) {
       if (backendRecordCreated) {
         await fetch(`${FASTAPI}/analysis_results/${analysisRecord.id}?user_id=${userId}`, {
           method: 'PATCH',
-          headers: fapiHeaders(userId),
+          headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
           body: JSON.stringify({
             status: 'failed',
             summary: ocrError instanceof Error ? ocrError.message : 'OCR processing failed',
@@ -225,7 +225,7 @@ export async function GET(request: NextRequest) {
       if (!userId) return NextResponse.json({ error: 'Authentication required' }, { status: 401 });
 
       const res = await fetch(`${FASTAPI}/analysis_results/${analysisId}`, {
-        headers: fapiHeaders(userId),
+        headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
       });
 
       if (!res.ok) return NextResponse.json({ error: 'Analysis not found' }, { status: 404 });
@@ -239,7 +239,7 @@ export async function GET(request: NextRequest) {
           if (statusResult.status === 'completed' && statusResult.analysis) {
             await fetch(`${FASTAPI}/analysis_results/${analysisId}?user_id=${userId}`, {
               method: 'PATCH',
-              headers: fapiHeaders(userId),
+              headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
               body: JSON.stringify({
                 status: 'completed',
                 summary: (statusResult.analysis as any)?.summary || 'Analysis completed',
@@ -252,7 +252,7 @@ export async function GET(request: NextRequest) {
           if (statusResult.status === 'failed') {
             await fetch(`${FASTAPI}/analysis_results/${analysisId}?user_id=${userId}`, {
               method: 'PATCH',
-              headers: fapiHeaders(userId),
+              headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
               body: JSON.stringify({
                 status: 'failed',
                 summary: statusResult.error ?? 'Analysis failed',

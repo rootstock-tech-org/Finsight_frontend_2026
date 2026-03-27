@@ -14,7 +14,10 @@ async function getStockFromFastAPI(symbol: string): Promise<any | null> {
 async function upsertStockInFastAPI(payload: any): Promise<void> {
   await fetch(`${FASTAPI}/stocks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 
+      'Content-Type': 'application/json',
+      'ngrok-skip-browser-warning': 'true',
+    },
     body: JSON.stringify(payload),
   }).catch(() => {});
 }
@@ -94,7 +97,10 @@ export async function PUT(
 
     const res = await fetch(`${FASTAPI}/stocks/${symbol}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
       body: JSON.stringify({ ...body, last_updated: new Date().toISOString() }),
     });
 

@@ -1,5 +1,5 @@
 {
-  "/api/ocr/upload/route": "app/api/ocr/upload/route.js",
   "/api/ocr/history/route": "app/api/ocr/history/route.js",
-  "/dashboard/page": "app/dashboard/page.js"
+  "/dashboard/page": "app/dashboard/page.js",
+  "/page": "app/page.js"
 }

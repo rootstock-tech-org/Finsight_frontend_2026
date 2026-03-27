@@ -137,7 +137,10 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!userId) { setProfileLoading(false); return; }
     fetch(`${FASTAPI}/user_profiles/${userId}`, {
-      headers: { Authorization: `Bearer ${userId}` },
+      headers: { 
+        Authorization: `Bearer ${userId}`,
+        'ngrok-skip-browser-warning': 'true',
+      }
     })
       .then(r => r.ok ? r.json() : null)
       .then(data => { setUserProfile(data); setProfileLoading(false); })

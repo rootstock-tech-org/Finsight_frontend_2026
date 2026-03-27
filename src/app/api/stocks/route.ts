@@ -70,7 +70,10 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch(`${FASTAPI}/stocks`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      },
       body: JSON.stringify({ ...body, last_updated: new Date().toISOString() }),
     });
 

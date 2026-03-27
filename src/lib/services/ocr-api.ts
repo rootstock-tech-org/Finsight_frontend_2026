@@ -169,7 +169,7 @@ export class OCRApiService {
   private timeout: number;
 
   constructor(config?: { baseUrl?: string; timeout?: number }) {
-    this.baseUrl = config?.baseUrl || 'http://127.0.0.1:1002';
+    this.baseUrl = config?.baseUrl || 'https://unpneumatically-gardenless-latrisha.ngrok-free.dev';
     this.timeout = config?.timeout || 300000; // 5 minutes for document processing
   }
 
@@ -196,6 +196,9 @@ export class OCRApiService {
       
       const response = await fetch(url, {
         method: 'POST',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: formData,
         signal: AbortSignal.timeout(this.timeout)
       });
@@ -288,6 +291,9 @@ export class OCRApiService {
       
       const response = await fetch(url, {
         method: 'POST',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: formData,
         signal: AbortSignal.timeout(30000) // 30 seconds for async submission
       });
@@ -355,6 +361,9 @@ export class OCRApiService {
       
       const response = await fetch(url, {
         method: 'GET',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        },
         signal: AbortSignal.timeout(10000)
       });
 
@@ -422,7 +431,8 @@ export class OCRApiService {
       const response = await fetch(url, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify({
           query: request.query,
@@ -454,6 +464,9 @@ export class OCRApiService {
       
       const response = await fetch(url, {
         method: 'GET',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        },
         signal: AbortSignal.timeout(10000)
       });
 
@@ -478,6 +491,9 @@ export class OCRApiService {
       
       const response = await fetch(url, {
         method: 'GET',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        },
         signal: AbortSignal.timeout(10000)
       });
 
@@ -502,6 +518,9 @@ export class OCRApiService {
       
       const response = await fetch(url, {
         method: 'GET',
+        headers: {
+          'ngrok-skip-browser-warning': 'true'
+        },
         signal: AbortSignal.timeout(5000)
       });
 

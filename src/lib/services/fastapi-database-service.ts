@@ -76,7 +76,8 @@ interface ApiError { message: string }
 async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
   return fetch(`${BACKEND_URL}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options?.headers || {}) },
+    headers: { 'Content-Type': 'application/json', "ngrok-skip-browser-warning": "true", ...(options?.headers || {}) },
+    
   });
 }
 

@@ -9,7 +9,7 @@ const FASTAPI = process.env.NEXT_PUBLIC_FASTAPI_URL ?? '';
 async function fapiUpdatePassword(resetToken: string, newPassword: string) {
   const res = await fetch(`${FASTAPI}/auth/update-password`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
     body: JSON.stringify({ reset_token: resetToken, new_password: newPassword }),
   });
   const data = await res.json();

@@ -15,7 +15,10 @@ export async function GET(request: NextRequest) {
     if (!userId) return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
 
     const res = await fetch(`${FASTAPI}/watchlist?user_id=${userId}`, {
-      headers: fapiHeaders({ Authorization: `Bearer ${userId}` }),
+      headers: fapiHeaders({ 
+        Authorization: `Bearer ${userId}`,
+        'ngrok-skip-browser-warning': 'true',
+      }),
     });
 
     if (!res.ok) {
@@ -38,7 +41,7 @@ export async function GET(request: NextRequest) {
       // Fetch cached prices from FastAPI
       const stocksRes = await fetch(
         `${FASTAPI}/stocks?symbols=${symbols.join(',')}`,
-        { headers: fapiHeaders() }
+        { headers: fapiHeaders({ 'ngrok-skip-browser-warning': 'true' }) }
       ).catch(() => null);
 
       const stocksData: any[] = stocksRes?.ok
@@ -88,7 +91,7 @@ export async function GET(request: NextRequest) {
           if (upserts.length > 0) {
             fetch(`${FASTAPI}/stocks/batch`, {
               method: 'POST',
-              headers: fapiHeaders(),
+              headers: fapiHeaders({ 'ngrok-skip-browser-warning': 'true' }),
               body: JSON.stringify({ stocks: upserts }),
             }).catch(() => {});
           }
@@ -134,7 +137,7 @@ export async function POST(request: NextRequest) {
 
     const res = await fetch(`${FASTAPI}/watchlist`, {
       method: 'POST',
-      headers: fapiHeaders({ Authorization: `Bearer ${user_id}` }),
+      headers: fapiHeaders({ Authorization: `Bearer ${user_id}`, 'ngrok-skip-browser-warning': 'true' }),
       body: JSON.stringify({ user_id, symbol, company_name, notes }),
     });
 
@@ -142,7 +145,7 @@ export async function POST(request: NextRequest) {
       // Already exists — fetch and return existing item
       const existing = await fetch(
         `${FASTAPI}/watchlist?user_id=${user_id}&symbol=${symbol}`,
-        { headers: fapiHeaders({ Authorization: `Bearer ${user_id}` }) }
+        { headers: fapiHeaders({ Authorization: `Bearer ${user_id}`, 'ngrok-skip-browser-warning': 'true' }) }
       );
       const data = await existing.json().catch(() => ({}));
       return NextResponse.json({ item: data.item ?? data }, { status: 200 });
@@ -177,7 +180,7 @@ export async function DELETE(request: NextRequest) {
 
     const res = await fetch(
       `${FASTAPI}/watchlist?user_id=${userId}&symbol=${symbol}`,
-      { method: 'DELETE', headers: fapiHeaders({ Authorization: `Bearer ${userId}` }) }
+      { method: 'DELETE', headers: fapiHeaders({ Authorization: `Bearer ${userId}`, 'ngrok-skip-browser-warning': 'true' }) }
     );
 
     if (!res.ok) {

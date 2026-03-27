@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     if (search) params.set('search', search);
 
     const res = await fetch(`${FASTAPI}/analysis_results/?user_id=${userId}&${params}`, {
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
     });
 
     if (!res.ok) {
@@ -87,7 +87,7 @@ export async function DELETE(request: NextRequest) {
     if (delete_all) {
       const listRes = await fetch(
         `${FASTAPI}/analysis_results/?user_id=${userId}&limit=500&page=1`,
-        { headers: fapiHeaders(userId) }
+        { headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" } }
       );
       if (!listRes.ok) {
         return NextResponse.json({ error: 'Failed to fetch analyses list for deletion' }, { status: 500 });
@@ -99,7 +99,7 @@ export async function DELETE(request: NextRequest) {
         items.map((item: any) =>
           fetch(`${FASTAPI}/analysis_results/${item.id}?user_id=${userId}`, {
             method: 'DELETE',
-            headers: fapiHeaders(userId),
+            headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
           }).catch(() => {})
         )
       );
@@ -116,7 +116,7 @@ export async function DELETE(request: NextRequest) {
       analysis_ids.map((id: string) =>
         fetch(`${FASTAPI}/analysis_results/${id}?user_id=${userId}`, {
           method: 'DELETE',
-          headers: fapiHeaders(userId),
+          headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
         }).catch(() => null)
       )
     );

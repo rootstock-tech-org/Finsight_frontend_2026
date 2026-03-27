@@ -31,7 +31,7 @@ export async function GET(
 
     // Fetch record from FastAPI
     const res = await fetch(`${FASTAPI}/analysis_results/${analysis_id}`, {
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" }
     });
 
     if (!res.ok) {
@@ -57,7 +57,7 @@ export async function GET(
           // Persist back to FastAPI (fire-and-forget)
           fetch(`${FASTAPI}/analysis_results/${analysis_id}`, {
             method: 'PATCH',
-            headers: fapiHeaders(userId),
+            headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
             body: JSON.stringify(patch),
           }).catch(() => {});
 
@@ -72,7 +72,7 @@ export async function GET(
 
           fetch(`${FASTAPI}/analysis_results/${analysis_id}`, {
             method: 'PATCH',
-            headers: fapiHeaders(userId),
+            headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
             body: JSON.stringify(patch),
           }).catch(() => {});
 
@@ -135,7 +135,7 @@ export async function PUT(
 
     const res = await fetch(`${FASTAPI}/analysis_results/${analysis_id}`, {
       method: 'PATCH',
-      headers: fapiHeaders(userId),
+      headers: { ...fapiHeaders(userId), "ngrok-skip-browser-warning": "true" },
       body: JSON.stringify(patch),
     });
 
