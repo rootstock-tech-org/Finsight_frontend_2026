@@ -222,14 +222,13 @@ export class SupabaseRealtimeService {
           },
         },
       })
-      .on('presence', { event: 'sync' }, onPresenceSync || (() => {}))
-      .on('presence', { event: 'join' }, ({ key, newPresences }) => {
-        onPresenceChange?.(newPresences)
-      })
-      .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
-        onPresenceChange?.(leftPresences)
-      })
-      .subscribe(async (status) => {
+.on('presence', { event: 'join' }, ({ key, newPresences }: any) => {
+  onPresenceChange?.(newPresences)
+})
+.on('presence', { event: 'leave' }, ({ key, leftPresences }: any) => {
+  onPresenceChange?.(leftPresences)
+})
+      .subscribe(async (status: any) => { 
         if (status === 'SUBSCRIBED') {
           await channel.track(userData)
         }

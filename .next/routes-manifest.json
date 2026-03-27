@@ -1,1 +1,164 @@
-{"version":3,"caseSensitive":false,"basePath":"","rewrites":{"beforeFiles":[],"afterFiles":[],"fallback":[]},"redirects":[{"source":"/:path+/","destination":"/:path+","permanent":true,"internal":true,"regex":"^(?:\\/((?:[^\\/]+?)(?:\\/(?:[^\\/]+?))*))\\/$"}],"headers":[]}
+{
+  "version": 3,
+  "pages404": true,
+  "caseSensitive": false,
+  "basePath": "",
+  "redirects": [
+    {
+      "source": "/:path+/",
+      "destination": "/:path+",
+      "internal": true,
+      "statusCode": 308,
+      "regex": "^(?:/((?:[^/]+?)(?:/(?:[^/]+?))*))/$"
+    }
+  ],
+  "headers": [],
+  "rewrites": {
+    "beforeFiles": [],
+    "afterFiles": [],
+    "fallback": []
+  },
+  "dynamicRoutes": [
+    {
+      "page": "/api/external-stocks/price/[symbol]",
+      "regex": "^/api/external\\-stocks/price/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPsymbol": "nxtPsymbol"
+      },
+      "namedRegex": "^/api/external\\-stocks/price/(?<nxtPsymbol>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/ocr/status/[analysis_id]",
+      "regex": "^/api/ocr/status/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPanalysis_id": "nxtPanalysis_id"
+      },
+      "namedRegex": "^/api/ocr/status/(?<nxtPanalysis_id>[^/]+?)(?:/)?$"
+    },
+    {
+      "page": "/api/stock/[symbol]/price",
+      "regex": "^/api/stock/([^/]+?)/price(?:/)?$",
+      "routeKeys": {
+        "nxtPsymbol": "nxtPsymbol"
+      },
+      "namedRegex": "^/api/stock/(?<nxtPsymbol>[^/]+?)/price(?:/)?$"
+    },
+    {
+      "page": "/api/stocks/[symbol]",
+      "regex": "^/api/stocks/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPsymbol": "nxtPsymbol"
+      },
+      "namedRegex": "^/api/stocks/(?<nxtPsymbol>[^/]+?)(?:/)?$"
+    }
+  ],
+  "staticRoutes": [
+    {
+      "page": "/",
+      "regex": "^/(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/(?:/)?$"
+    },
+    {
+      "page": "/_not-found",
+      "regex": "^/_not\\-found(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/_not\\-found(?:/)?$"
+    },
+    {
+      "page": "/dashboard",
+      "regex": "^/dashboard(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/dashboard(?:/)?$"
+    },
+    {
+      "page": "/document-intelligence",
+      "regex": "^/document\\-intelligence(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/document\\-intelligence(?:/)?$"
+    },
+    {
+      "page": "/favicon.ico",
+      "regex": "^/favicon\\.ico(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/favicon\\.ico(?:/)?$"
+    },
+    {
+      "page": "/login",
+      "regex": "^/login(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/login(?:/)?$"
+    },
+    {
+      "page": "/ocr",
+      "regex": "^/ocr(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/ocr(?:/)?$"
+    },
+    {
+      "page": "/otp",
+      "regex": "^/otp(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/otp(?:/)?$"
+    },
+    {
+      "page": "/pricing",
+      "regex": "^/pricing(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/pricing(?:/)?$"
+    },
+    {
+      "page": "/profile",
+      "regex": "^/profile(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/profile(?:/)?$"
+    },
+    {
+      "page": "/register",
+      "regex": "^/register(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/register(?:/)?$"
+    },
+    {
+      "page": "/reset-password",
+      "regex": "^/reset\\-password(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/reset\\-password(?:/)?$"
+    },
+    {
+      "page": "/stocks",
+      "regex": "^/stocks(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/stocks(?:/)?$"
+    },
+    {
+      "page": "/test-stock-service",
+      "regex": "^/test\\-stock\\-service(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/test\\-stock\\-service(?:/)?$"
+    },
+    {
+      "page": "/watchlist",
+      "regex": "^/watchlist(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/watchlist(?:/)?$"
+    }
+  ],
+  "dataRoutes": [],
+  "rsc": {
+    "header": "RSC",
+    "varyHeader": "RSC, Next-Router-State-Tree, Next-Router-Prefetch, Next-Router-Segment-Prefetch",
+    "prefetchHeader": "Next-Router-Prefetch",
+    "didPostponeHeader": "x-nextjs-postponed",
+    "contentTypeHeader": "text/x-component",
+    "suffix": ".rsc",
+    "prefetchSuffix": ".prefetch.rsc",
+    "prefetchSegmentHeader": "Next-Router-Segment-Prefetch",
+    "prefetchSegmentSuffix": ".segment.rsc",
+    "prefetchSegmentDirSuffix": ".segments"
+  },
+  "rewriteHeaders": {
+    "pathHeader": "x-nextjs-rewritten-path",
+    "queryHeader": "x-nextjs-rewritten-query"
+  }
+}

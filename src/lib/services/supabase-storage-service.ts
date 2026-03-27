@@ -137,7 +137,7 @@ export class SupabaseStorageService {
         return { data: null, error }
       }
 
-      const files: StorageFile[] = (data || []).map(item => ({
+      const files: StorageFile[] = (data || []).map((item: any) => ({
         name: item.name,
         id: item.id,
         updated_at: item.updated_at,
@@ -233,7 +233,7 @@ export class SupabaseStorageService {
         return { data: null, error }
       }
 
-      const file = data?.find(item => item.name === path.split('/').pop())
+      const file = data?.find((item: any) => item.name === path.split('/').pop())
       return { data: file?.metadata?.size || null, error: null }
     } catch (error) {
       return { data: null, error: error as StorageError }
@@ -251,7 +251,7 @@ export class SupabaseStorageService {
         return { data: null, error }
       }
 
-      const exists = data?.some(item => item.name === path.split('/').pop())
+      const exists = data?.some((item: any) => item.name === path.split('/').pop())
       return { data: exists || false, error: null }
     } catch (error) {
       return { data: null, error: error as StorageError }

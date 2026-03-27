@@ -40,10 +40,8 @@ export function useRealTimeStocks(options: UseRealTimeStocksOptions = {}) {
     }
   }, [symbol, search, limit, offset]);
 
-  // Initial fetch
   useEffect(() => { fetchStocks(); }, [fetchStocks]);
 
-  // Polling replaces Supabase realtime subscription
   useEffect(() => {
     if (!autoRefresh) return;
     const id = setInterval(fetchStocks, refreshInterval);
@@ -81,7 +79,6 @@ export function useRealTimeStockDetails(symbol: string) {
 
   useEffect(() => {
     fetchDetails();
-    // Poll for price updates every 30s (replaces Supabase realtime)
     pollRef.current = setInterval(fetchDetails, 30_000);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchDetails]);
@@ -92,18 +89,20 @@ export function useRealTimeStockDetails(symbol: string) {
 // ── useRealTimeNews ───────────────────────────────────────────────────────
 export function useRealTimeNews(options: { symbol?: string; limit?: number } = {}) {
   const { symbol, limit = 20 } = options;
+
   const [news, setNews] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
 
   const fetchNews = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await realTimeStockService.fetchNews({ symbol, limit });
-      setNews(data.news);
-      setTotal(data.total);
+
+      // ✅ FIX: Use existing API
+      const data = await realTimeStockService.fetchStockDetails(symbol || '');
+
+      setNews(data.news?.slice(0, limit) || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch news');
       console.error('Error fetching news:', err);
@@ -114,13 +113,12 @@ export function useRealTimeNews(options: { symbol?: string; limit?: number } = {
 
   useEffect(() => { fetchNews(); }, [fetchNews]);
 
-  // Poll for new articles every 60s (replaces Supabase INSERT subscription)
   useEffect(() => {
     const id = setInterval(fetchNews, 60_000);
     return () => clearInterval(id);
   }, [fetchNews]);
 
-  return { news, loading, error, total, refetch: fetchNews };
+  return { news, loading, error, total: news.length, refetch: fetchNews };
 }
 
 // ── useStockDataToWatchlistItem ───────────────────────────────────────────
