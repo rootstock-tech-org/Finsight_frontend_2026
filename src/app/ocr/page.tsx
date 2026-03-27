@@ -299,9 +299,7 @@ const OCRPage: React.FC = () => {
                 </p>
               </div>
               
-              <OCRAnalysisHistory
-                onAnalysisSelect={handleAnalysisSelect}
-              />
+              <OCRAnalysisHistory />
             </div>
           )}
         </div>
