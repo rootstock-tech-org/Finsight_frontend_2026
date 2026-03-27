@@ -231,11 +231,11 @@ export default function DashboardPage() {
 
           {/* Tabs */}
           <div className="flex border-b mb-6 pb-2 space-x-2 sm:space-x-4 overflow-x-auto">
-            {([
-              { id: 'overview',          icon: BarChart3, label: 'Overview' },
-              { id: 'document-analysis', icon: FileText,  label: 'Document Analysis', short: 'Docs' },
-              { id: 'analysis-history',  icon: History,   label: 'Analysis History',  short: 'History' },
-            ] as const).map(({ id, icon: Icon, label, short }) => (
+          {([
+            { id: 'overview',          icon: BarChart3, label: 'Overview', short: 'Overview' },
+            { id: 'document-analysis', icon: FileText,  label: 'Document Analysis', short: 'Docs' },
+            { id: 'analysis-history',  icon: History,   label: 'Analysis History',  short: 'History' },
+          ] as const).map(({ id, icon: Icon, label, short }) => (
               <button key={id} onClick={() => setActiveTab(id)}
                 className={`pb-2 font-medium text-sm sm:text-lg transition-colors flex items-center space-x-1 sm:space-x-2 whitespace-nowrap ${
                   activeTab === id
@@ -389,11 +389,15 @@ export default function DashboardPage() {
                   addToast('success', 'Document uploaded and analysed successfully.');
                   setActiveTab('analysis-history');
                 }}
-                onUploadError={(error) => {
-                  const message =
-                    typeof error === 'string' ? error
-                    : error instanceof Error ? error.message
-                    : (error as any)?.message ?? 'Upload failed. Please try again.';
+                onUploadError={(error: unknown) => {
+                  let message = 'Upload failed. Please try again.';
+
+                  if (typeof error === 'string') {
+                    message = error;
+                  } else if (error && typeof error === 'object' && 'message' in error) {
+                    message = String((error as any).message);
+                  }
+
                   console.error('Upload error:', message);
                   addToast('error', message);
                 }}
