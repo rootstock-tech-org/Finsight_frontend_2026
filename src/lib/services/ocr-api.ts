@@ -169,7 +169,7 @@ export class OCRApiService {
   private timeout: number;
 
   constructor(config?: { baseUrl?: string; timeout?: number }) {
-    this.baseUrl = config?.baseUrl || 'https://unpneumatically-gardenless-latrisha.ngrok-free.dev';
+    this.baseUrl = config?.baseUrl || 'https://lambdoid-blearily-graciela.ngrok-free.dev';
     this.timeout = config?.timeout || 300000; // 5 minutes for document processing
   }
 
